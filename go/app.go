@@ -328,7 +328,7 @@ func (a *App) StartServer(dto ConfigDTO) error {
 
 	opts := proc.Options{
 		Context:   a.cfg.Context,
-		Parallel:  2,
+		Parallel:  3,
 		GPULayers: a.cfg.GPULayers,
 		LlamaPort: a.cfg.LlamaPort,
 		Host:      a.cfg.Host,
@@ -589,19 +589,19 @@ func (a *App) TriggerQuickTest(taskType string) (string, error) {
 	switch taskType {
 	case "stop":
 		path = "/jev/stop"
-		payload = `{"log": "All tests passed. Task completed successfully."}`
+		payload = `{"log": "pytest test_api.py -v\n12 passed in 1.42s\nExit code: 0\nAll tasks completed."}`
 	case "extract":
 		path = "/jev/extract"
 		payload = `{"log": "Ran pytest: 3 passed. Modified internal/api/server.go and schema.go."}`
 	case "scan":
 		path = "/jev/scan"
-		payload = `{"log": "Starting engine...\nError [E1029]: connection timed out on port 8080\nTraceback complete."}`
+		payload = `{"log": "Process crashed: SIGSEGV 11: Invalid memory reference at 0x00007fff8820\nThread 4 terminated abnormally."}`
 	default:
 		return "", fmt.Errorf("unknown test task: %s", taskType)
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Post(url, "application/json", strings.NewReader(payload))
 	if err != nil {
 		return "", err

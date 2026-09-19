@@ -151,64 +151,57 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "llm_ok": true, "llm": s.Llama.Root, "model": id, "n_slots": n,
-		"slots": map[string]int{"decision": schema.SlotDecision, "extract": schema.SlotExtract},
-		"warn_parallel": n < 2,
+		"slots": map[string]int{
+			"decision": schema.SlotDecision,
+			"extract":  schema.SlotExtract,
+			"scan":     schema.SlotScan,
+		},
+		"warn_parallel": n < 3,
 	})
 }
 
 func (s *Server) schema(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
-		"stop": map[string]any{"type": "boolean", "from": "Yes/No", "slot": schema.SlotDecision},
-		"extract": map[string]any{"schema": schema.ExtractSchema(), "slot": schema.SlotExtract},
-		"scan": map[string]any{"type": "string", "backend": "regex"},
+		"stop":      map[string]any{"type": "cot", "grammar": "1-line reason + Yes/No", "slot": schema.SlotDecision},
+		"extract":   map[string]any{"schema": schema.ExtractSchema(), "slot": schema.SlotExtract},
+		"scan":      map[string]any{"type": "semantic", "backend": "llm", "slot": schema.SlotScan},
 		"systemone": map[string]any{"path": "/v1/systemone", "types": []string{"noul", "choice"}, "slot": schema.SlotDecision},
 	})
 }
 
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
-	log, err := readLog(r)
+	logText, err := readLog(r)
 	if err != nil {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}
 	t0 := time.Now()
-	result, _, _, pn, cn, err := s.Llama.ChatDecide(
-		"Has the agent task fully completed so the loop should stop?",
-		[]string{"Yes", "No"},
-		log,
-	)
+	verdict, reason, metrics, err := s.Llama.DecideCoT(logText)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"detail": err.Error()})
 		return
 	}
 	latencyMs := time.Since(t0).Milliseconds()
-	ttftMs := latencyMs
-	toks := 0.0
-	if cn > 0 && latencyMs > 0 {
-		toks = float64(cn) / (float64(latencyMs) / 1000.0)
-	}
+	ttftMs := int64(asFloat(metrics["ttft_s"]) * 1000)
+	toks := asFloat(metrics["tok_s"])
+	pn := asInt(metrics["prompt_tokens"])
+	cn := asInt(metrics["completion_tokens"])
+
 	s.emit(RequestEvent{
-		Task:       "Task A (Stop)",
+		Task:       "Task A (Stop+CoT)",
 		SlotID:     schema.SlotDecision,
 		LatencyMs:  latencyMs,
 		TTFTMs:     ttftMs,
 		TokPerSec:  toks,
 		PromptToks: pn,
 		OutToks:    cn,
-		Summary:    fmt.Sprintf("stop=%v (%s)", strings.EqualFold(result, "Yes"), result),
+		Summary:    fmt.Sprintf("stop=%v (%s) reason=%s", strings.EqualFold(verdict, "Yes"), verdict, truncate(reason, 60)),
 	})
 	writeJSON(w, 200, map[string]any{
-		"stop": strings.EqualFold(result, "Yes"),
-		"raw":  result,
-		"metrics": map[string]any{
-			"latency_ms":        latencyMs,
-			"ttft_s":            time.Since(t0).Seconds(),
-			"decode_s":          0.0,
-			"total_s":           time.Since(t0).Seconds(),
-			"prompt_tokens":     pn,
-			"completion_tokens": cn,
-			"tok_s":             toks,
-		},
+		"stop":    strings.EqualFold(verdict, "Yes"),
+		"raw":     verdict,
+		"reason":  reason,
+		"metrics": metrics,
 	})
 }
 
@@ -273,7 +266,7 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 	summary := fmt.Sprintf("status=%v, tool=%v", parsed["status"], parsed["tool"])
 	s.emit(RequestEvent{
 		Task:       "Task B (Extract)",
-		SlotID:     1,
+		SlotID:     schema.SlotExtract,
 		LatencyMs:  latMs,
 		TTFTMs:     ttftMs,
 		TokPerSec:  toks,
@@ -296,32 +289,43 @@ func buildExtractUserPrompt(logText string) string {
 }
 
 func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
-	log, err := readLog(r)
+	logText, err := readLog(r)
 	if err != nil {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}
 	t0 := time.Now()
-	found := schema.ErrorLine.FindAllString(log, -1)
-	line := ""
-	if len(found) > 0 {
-		line = strings.TrimSpace(found[len(found)-1])
+	severity, finding, metrics, err := s.Llama.ScanLog(logText)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"detail": err.Error()})
+		return
 	}
-	dt := time.Since(t0).Seconds()
+	latencyMs := time.Since(t0).Milliseconds()
+	ttftMs := int64(asFloat(metrics["ttft_s"]) * 1000)
+	toks := asFloat(metrics["tok_s"])
+	pn := asInt(metrics["prompt_tokens"])
+	cn := asInt(metrics["completion_tokens"])
+
+	action := "continue"
+	if severity == "Critical" {
+		action = "halt_loop"
+	}
+
 	s.emit(RequestEvent{
 		Task:       "Task C (Scan)",
-		SlotID:     -1,
-		LatencyMs:  time.Since(t0).Milliseconds(),
-		TTFTMs:     0,
-		TokPerSec:  0,
-		Summary:    fmt.Sprintf("needle=%s", line),
+		SlotID:     schema.SlotScan,
+		LatencyMs:  latencyMs,
+		TTFTMs:     ttftMs,
+		TokPerSec:  toks,
+		PromptToks: pn,
+		OutToks:    cn,
+		Summary:    fmt.Sprintf("severity=%s finding=%s", severity, truncate(finding, 50)),
 	})
 	writeJSON(w, 200, map[string]any{
-		"line": line,
-		"metrics": map[string]any{
-			"ttft_s": dt, "decode_s": 0, "total_s": dt,
-			"prompt_tokens": 0, "completion_tokens": 0, "tok_s": 0,
-		},
+		"severity": severity,
+		"finding":  finding,
+		"action":   action,
+		"metrics":  metrics,
 	})
 }
 
@@ -407,4 +411,3 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 		"latency_ms":   float64(latMs),
 	})
 }
-

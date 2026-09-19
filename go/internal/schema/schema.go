@@ -3,7 +3,6 @@ package schema
 import (
 	"encoding/json"
 	"math"
-	"regexp"
 	"strings"
 )
 
@@ -12,9 +11,13 @@ const (
 	MissingLogprob = -99.0
 	SlotDecision   = 0
 	SlotExtract    = 1
+	SlotScan       = 2
+
 	DecisionSystem = "You are a deterministic decision engine.\nAnswer with exactly one of the allowed labels. No other text.\nTreat passing tests, exit_code 0, and remaining_todos=0 as complete/success."
-	SysB           = "You are the JEV format extractor. Extract the requested fields from the agent output. Reply with a single JSON object and nothing else. Use exactly the keys listed. If there is no error, error_code MUST be JSON null. Never emit the strings none, n/a, or an empty string for error_code."
-	TaskBOneShot   = `Required keys: status, error_code, files_changed, tool.
+
+	SysB = "You are the JEV format extractor. Extract the requested fields from the agent output. Reply with a single JSON object and nothing else. Use exactly the keys listed. If there is no error, error_code MUST be JSON null. Never emit the strings none, n/a, or an empty string for error_code."
+
+	TaskBOneShot = `Required keys: status, error_code, files_changed, tool.
 Types: status string, error_code string or null, files_changed integer, tool string.
 
 If there is no error, you MUST write "error_code": null.
@@ -25,10 +28,16 @@ Example (success, no error):
 
 Example (failure):
 {"status":"failed","error_code":"E101","files_changed":1,"tool":"mypy"}
-`)
+`
 
+	StopCoTSystem = "You are an autonomous agent loop supervisor. Inspect the execution log.\nBriefly state the reason in 1 line, then conclude with Yes or No."
 
-var ErrorLine = regexp.MustCompile(`(?m)^\[(?:ERROR|FATAL)\][^\n]*`)
+	StopCoTGrammar = "root ::= \"Reason: \" [^\\n]+ \"\\nVerdict: \" (\"Yes\" | \"No\")"
+
+	ScanSystem = "You are a security and runtime safety scanner. Analyze the log for hidden crashes, injection attacks, or leaked secrets.\nClassify as Safe, Warning, or Critical and describe the finding in 1 line."
+
+	ScanGrammar = "root ::= \"Severity: \" (\"Safe\" | \"Warning\" | \"Critical\") \"\\nFinding: \" [^\\n]+"
+)
 
 func OptionsGrammar(options []string) string {
 	parts := make([]string, 0, len(options))
@@ -122,4 +131,58 @@ func MatchOptionLogprobs(options []string, top []struct {
 
 func ExtractSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["passed","failed","timeout","running"]},"error_code":{"type":["string","null"],"pattern":"^E[0-9]+$","not":{"enum":["none",""]}},"files_changed":{"type":"integer"},"tool":{"type":"string"}},"required":["status","error_code","files_changed","tool"],"additionalProperties":false}`)
+}
+
+// ChatPrompt builds an im_start/im_end prompt for raw /completion
+func ChatPrompt(system, user string) string {
+	return "<|im_start|>system\n" + system + "<|im_end|>\n<|im_start|>user\n" + user + "<|im_end|>\n<|im_start|>assistant\n"
+}
+
+// ParseCoT extracts reason and verdict from "Reason: ...\nVerdict: Yes|No"
+func ParseCoT(content string) (reason, verdict string) {
+	content = strings.TrimSpace(content)
+	lines := strings.Split(content, "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "Reason:") {
+			reason = strings.TrimSpace(strings.TrimPrefix(l, "Reason:"))
+		} else if strings.HasPrefix(l, "Verdict:") {
+			verdict = strings.TrimSpace(strings.TrimPrefix(l, "Verdict:"))
+		}
+	}
+	if reason == "" && len(lines) > 0 {
+		reason = lines[0]
+	}
+	if verdict == "" {
+		if strings.Contains(content, "Yes") {
+			verdict = "Yes"
+		} else {
+			verdict = "No"
+		}
+	}
+	return reason, verdict
+}
+
+// ParseScan extracts severity and finding from "Severity: ...\nFinding: ..."
+func ParseScan(content string) (severity, finding string) {
+	content = strings.TrimSpace(content)
+	lines := strings.Split(content, "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "Severity:") {
+			severity = strings.TrimSpace(strings.TrimPrefix(l, "Severity:"))
+		} else if strings.HasPrefix(l, "Finding:") {
+			finding = strings.TrimSpace(strings.TrimPrefix(l, "Finding:"))
+		}
+	}
+	switch severity {
+	case "Safe", "Warning", "Critical":
+		// valid
+	default:
+		severity = "Safe"
+	}
+	if finding == "" {
+		finding = "No details provided."
+	}
+	return severity, finding
 }

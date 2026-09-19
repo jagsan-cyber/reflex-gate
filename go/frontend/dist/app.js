@@ -5,10 +5,10 @@
 const i18n = {
   ja: {
     title: "local-jev ランチャー",
-    subtitle: "Qwen3.5-0.8B JEV 高速判定",
+    subtitle: "Qwen2.5-Coder-1.5B AI Gateway",
     serverModelConfig: "サーバー & モデル設定",
     lblLlama: "llama-server.exe のパス",
-    lblModel: "Qwen3.5-0.8B GGUF モデル",
+    lblModel: "GGUF モデルパス",
     btnBrowse: "参照",
     btnAutoDL: "バイナリ & モデル自動取得",
     execSettings: "実行オプション & ポート",
@@ -38,9 +38,9 @@ const i18n = {
     recentLogs: "リアルタイム推論ログ",
     btnLogCopy: "コピー",
     btnLogClear: "クリア",
-    btnTestStop: "Stop 判定",
+    btnTestStop: "Stop 判定 (CoT)",
     btnTestExtract: "Diff抽出",
-    btnTestScan: "エラー検知",
+    btnTestScan: "セマンティック走査",
     btnTestStress: "⚡ 負荷連打",
     terminalEmpty: "リクエスト履歴がありません。サーバーを起動すると推論ログがリアルタイム表示されます。",
     statusStopped: "停止中",
@@ -57,10 +57,10 @@ const i18n = {
   },
   en: {
     title: "local-jev Launcher",
-    subtitle: "Qwen3.5-0.8B Fast AI Gateway",
+    subtitle: "Qwen2.5-Coder-1.5B Fast AI Gateway",
     serverModelConfig: "Server & Model Configuration",
     lblLlama: "Path to llama-server.exe",
-    lblModel: "Qwen3.5-0.8B GGUF Model",
+    lblModel: "GGUF Model Path",
     btnBrowse: "Browse",
     btnAutoDL: "Auto Fetch Binary & Model",
     execSettings: "Execution Options & Ports",
@@ -81,9 +81,9 @@ const i18n = {
     btnDemo: "Open Web Demo",
     btnCopyURL: "Copy URL",
     quickTest: "Quick Test Suite",
-    btnTestStop: "Stop Check",
+    btnTestStop: "Stop Check (CoT)",
     btnTestExtract: "Diff Extract",
-    btnTestScan: "Scan Error",
+    btnTestScan: "Semantic Scan",
     btnTestStress: "⚡ Stress Run",
     terminalEmpty: "No requests yet. Start server to monitor activity.",
     liveMonitor: "Live AI Performance Monitor",
@@ -116,6 +116,7 @@ let latencyHistory = [];
 let totalCallsCount = 0;
 let slot0Timeout = null;
 let slot1Timeout = null;
+let slot2Timeout = null;
 
 // DOM Element References
 const elements = {
@@ -179,6 +180,7 @@ const elements = {
   engineText: document.getElementById("engineText"),
   slot0Badge: document.getElementById("slot0Badge"),
   slot1Badge: document.getElementById("slot1Badge"),
+  slot2Badge: document.getElementById("slot2Badge"),
 
   lblLatencyMeter: document.getElementById("lblLatencyMeter"),
   meterLatencyText: document.getElementById("meterLatencyText"),
@@ -430,6 +432,12 @@ function onTelemetry(ev) {
     elements.slot1Badge.classList.add("active");
     if (slot1Timeout) clearTimeout(slot1Timeout);
     slot1Timeout = setTimeout(() => elements.slot1Badge.classList.remove("active"), 350);
+  } else if (ev.SlotID === 2) {
+    if (elements.slot2Badge) {
+      elements.slot2Badge.classList.add("active");
+      if (slot2Timeout) clearTimeout(slot2Timeout);
+      slot2Timeout = setTimeout(() => elements.slot2Badge.classList.remove("active"), 350);
+    }
   }
 
   // Draw Waveform

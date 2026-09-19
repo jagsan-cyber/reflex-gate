@@ -163,6 +163,44 @@ func (l *Llama) ChatDecide(question string, options []string, context string) (r
 	return result, dist, content, promptN, predN, nil
 }
 
+// DecideCoT uses 1-line Chain-of-Thought reasoning with GBNF grammar
+func (l *Llama) DecideCoT(logText string) (verdict, reason string, metrics map[string]any, err error) {
+	userContent := "[Execution Log]\n" + schema.TrimContext(logText)
+	prompt := schema.ChatPrompt(schema.StopCoTSystem, userContent)
+
+	t0 := time.Now()
+	data, err := l.Completion(prompt, 80, schema.SlotDecision, 0, schema.StopCoTGrammar, nil)
+	if err != nil {
+		return "", "", nil, err
+	}
+	wallS := time.Since(t0).Seconds()
+
+	content, _ := data["content"].(string)
+	reason, verdict = schema.ParseCoT(content)
+	metrics = TimingsMetrics(data, wallS)
+	metrics["raw"] = strings.TrimSpace(content)
+	return verdict, reason, metrics, nil
+}
+
+// ScanLog performs semantic security/runtime scanning with GBNF grammar
+func (l *Llama) ScanLog(logText string) (severity, finding string, metrics map[string]any, err error) {
+	userContent := "[Log to scan]\n" + schema.TrimContext(logText)
+	prompt := schema.ChatPrompt(schema.ScanSystem, userContent)
+
+	t0 := time.Now()
+	data, err := l.Completion(prompt, 60, schema.SlotScan, 0, schema.ScanGrammar, nil)
+	if err != nil {
+		return "", "", nil, err
+	}
+	wallS := time.Since(t0).Seconds()
+
+	content, _ := data["content"].(string)
+	severity, finding = schema.ParseScan(content)
+	metrics = TimingsMetrics(data, wallS)
+	metrics["raw"] = strings.TrimSpace(content)
+	return severity, finding, metrics, nil
+}
+
 func (l *Llama) postJSON(path string, req map[string]any) (map[string]any, error) {
 	b, err := json.Marshal(req)
 	if err != nil {

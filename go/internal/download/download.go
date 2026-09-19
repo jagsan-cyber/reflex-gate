@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	GGUFURL    = "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf?download=true"
-	GGUFName   = "Qwen3.5-0.8B-Q8_0.gguf"
+	GGUFURL    = "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q8_0.gguf?download=true"
+	GGUFName   = "qwen2.5-coder-1.5b-instruct-q8_0.gguf"
 	ReleaseAPI = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5"
 )
 

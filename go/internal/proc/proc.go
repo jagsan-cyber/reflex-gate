@@ -80,7 +80,7 @@ func (r *Runner) Start(llamaExe, model string, opt Options) error {
 		opt.Context = 8192
 	}
 	if opt.Parallel <= 0 {
-		opt.Parallel = 2
+		opt.Parallel = 3
 	}
 	if opt.LlamaPort <= 0 {
 		opt.LlamaPort = 8080
