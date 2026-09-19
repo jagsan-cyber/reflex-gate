@@ -43,46 +43,180 @@ func TestModelsEndpoint(t *testing.T) {
 }
 
 func TestAuthValidation(t *testing.T) {
-	os.Setenv("TYPESAFE_API_KEY", "secret-test-key")
-	defer os.Unsetenv("TYPESAFE_API_KEY")
+	// 1. Default mode ("off"): requests succeed with or without header
+	t.Run("mode_off_default", func(t *testing.T) {
+		os.Unsetenv("JEV_AUTH")
+		os.Unsetenv("TYPESAFE_API_KEY")
 
-	s := NewServer("http://127.0.0.1:9999")
-	ts := httptest.NewServer(s.Handler())
-	defer ts.Close()
+		s := NewServer("http://127.0.0.1:9999")
+		ts := httptest.NewServer(s.Handler())
+		defer ts.Close()
 
-	// Missing header -> 401
-	resp1, err := http.Get(ts.URL + "/v1/models")
-	if err != nil {
-		t.Fatalf("failed: %v", err)
-	}
-	defer resp1.Body.Close()
-	if resp1.StatusCode != 401 {
-		t.Errorf("expected 401 without auth header, got %d", resp1.StatusCode)
-	}
+		// No auth header -> 200
+		resp, err := http.Get(ts.URL + "/v1/models")
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
 
-	// Wrong key -> 401
-	req2, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
-	req2.Header.Set("Authorization", "Bearer wrong-key")
-	resp2, err := http.DefaultClient.Do(req2)
-	if err != nil {
-		t.Fatalf("failed: %v", err)
-	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode != 401 {
-		t.Errorf("expected 401 with wrong key, got %d", resp2.StatusCode)
-	}
+		// Dummy bearer token -> 200
+		req, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req.Header.Set("Authorization", "Bearer dummy-token")
+		resp2, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp2.Body.Close()
+		if resp2.StatusCode != 200 {
+			t.Errorf("expected 200 with dummy token in off mode, got %d", resp2.StatusCode)
+		}
+	})
 
-	// Correct key -> 200
-	req3, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
-	req3.Header.Set("Authorization", "Bearer secret-test-key")
-	resp3, err := http.DefaultClient.Do(req3)
-	if err != nil {
-		t.Fatalf("failed: %v", err)
-	}
-	defer resp3.Body.Close()
-	if resp3.StatusCode != 200 {
-		t.Errorf("expected 200 with correct key, got %d", resp3.StatusCode)
-	}
+	// 2. Strict mode via env
+	t.Run("mode_strict_env", func(t *testing.T) {
+		os.Setenv("JEV_AUTH", "strict")
+		os.Setenv("TYPESAFE_API_KEY", "secret-test-key")
+		defer func() {
+			os.Unsetenv("JEV_AUTH")
+			os.Unsetenv("TYPESAFE_API_KEY")
+		}()
+
+		s := NewServer("http://127.0.0.1:9999")
+		ts := httptest.NewServer(s.Handler())
+		defer ts.Close()
+
+		// Missing header -> 401
+		resp1, err := http.Get(ts.URL + "/v1/models")
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp1.Body.Close()
+		if resp1.StatusCode != 401 {
+			t.Errorf("expected 401 without auth header, got %d", resp1.StatusCode)
+		}
+
+		// Wrong key -> 401
+		req2, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req2.Header.Set("Authorization", "Bearer wrong-key")
+		resp2, err := http.DefaultClient.Do(req2)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp2.Body.Close()
+		if resp2.StatusCode != 401 {
+			t.Errorf("expected 401 with wrong key, got %d", resp2.StatusCode)
+		}
+
+		// Correct key -> 200
+		req3, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req3.Header.Set("Authorization", "Bearer secret-test-key")
+		resp3, err := http.DefaultClient.Do(req3)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp3.Body.Close()
+		if resp3.StatusCode != 200 {
+			t.Errorf("expected 200 with correct key, got %d", resp3.StatusCode)
+		}
+	})
+
+	// 3. Loose mode via env
+	t.Run("mode_loose_env", func(t *testing.T) {
+		os.Setenv("JEV_AUTH", "loose")
+		os.Setenv("TYPESAFE_API_KEY", "secret-test-key")
+		defer func() {
+			os.Unsetenv("JEV_AUTH")
+			os.Unsetenv("TYPESAFE_API_KEY")
+		}()
+
+		s := NewServer("http://127.0.0.1:9999")
+		ts := httptest.NewServer(s.Handler())
+		defer ts.Close()
+
+		// Missing header -> 200 (allowed for local scripts)
+		resp1, err := http.Get(ts.URL + "/v1/models")
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp1.Body.Close()
+		if resp1.StatusCode != 200 {
+			t.Errorf("expected 200 without header in loose mode, got %d", resp1.StatusCode)
+		}
+
+		// Wrong key -> 401
+		req2, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req2.Header.Set("Authorization", "Bearer wrong-key")
+		resp2, err := http.DefaultClient.Do(req2)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp2.Body.Close()
+		if resp2.StatusCode != 401 {
+			t.Errorf("expected 401 with wrong key in loose mode, got %d", resp2.StatusCode)
+		}
+
+		// Correct key -> 200
+		req3, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req3.Header.Set("Authorization", "Bearer secret-test-key")
+		resp3, err := http.DefaultClient.Do(req3)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp3.Body.Close()
+		if resp3.StatusCode != 200 {
+			t.Errorf("expected 200 with correct key in loose mode, got %d", resp3.StatusCode)
+		}
+	})
+
+	// 4. Config fallback (server struct fields used when env vars are unset)
+	t.Run("config_fallback_strict", func(t *testing.T) {
+		os.Unsetenv("JEV_AUTH")
+		os.Unsetenv("TYPESAFE_API_KEY")
+
+		s := NewServer("http://127.0.0.1:9999")
+		s.AuthMode = "strict"
+		s.APIKey = "config-secret-key"
+
+		ts := httptest.NewServer(s.Handler())
+		defer ts.Close()
+
+		// Missing header -> 401
+		resp1, err := http.Get(ts.URL + "/v1/models")
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp1.Body.Close()
+		if resp1.StatusCode != 401 {
+			t.Errorf("expected 401 without auth header, got %d", resp1.StatusCode)
+		}
+
+		// Wrong key -> 401
+		req2, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req2.Header.Set("Authorization", "Bearer wrong-key")
+		resp2, err := http.DefaultClient.Do(req2)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp2.Body.Close()
+		if resp2.StatusCode != 401 {
+			t.Errorf("expected 401 with wrong key, got %d", resp2.StatusCode)
+		}
+
+		// Correct key from config -> 200
+		req3, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req3.Header.Set("Authorization", "Bearer config-secret-key")
+		resp3, err := http.DefaultClient.Do(req3)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		resp3.Body.Close()
+		if resp3.StatusCode != 200 {
+			t.Errorf("expected 200 with config key, got %d", resp3.StatusCode)
+		}
+	})
 }
 
 func TestSystemOneInputValidation(t *testing.T) {

@@ -430,6 +430,8 @@ func (a *App) StartServer(dto ConfigDTO) error {
 
 		llamaRoot := fmt.Sprintf("http://127.0.0.1:%d", opts.LlamaPort)
 		apiSrv := api.NewServer(llamaRoot)
+		apiSrv.AuthMode = a.cfg.AuthMode
+		apiSrv.APIKey = a.cfg.APIKey
 		apiSrv.OnEvent = func(ev api.RequestEvent) {
 			runtime.EventsEmit(a.ctx, "telemetry", ev)
 		}

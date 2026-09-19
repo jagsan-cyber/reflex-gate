@@ -17,6 +17,8 @@ type Config struct {
 	LlamaPort   int    `json:"llama_port"`
 	Host        string `json:"host"`
 	Lang        string `json:"lang"`
+	AuthMode    string `json:"auth_mode"` // off | loose | strict (default: off)
+	APIKey      string `json:"api_key"`
 }
 
 func Path() string {
@@ -42,6 +44,7 @@ func Load() Config {
 		Host:      "0.0.0.0",
 		Context:   8192,
 		Lang:      "ja",
+		AuthMode:  "off",
 	}
 	b, err := os.ReadFile(Path())
 	if err != nil {
@@ -59,6 +62,9 @@ func Load() Config {
 	}
 	if c.Lang != "en" && c.Lang != "ja" {
 		c.Lang = "ja"
+	}
+	if c.AuthMode != "off" && c.AuthMode != "loose" && c.AuthMode != "strict" {
+		c.AuthMode = "off"
 	}
 	return c
 }

@@ -103,10 +103,28 @@ TypeSafe AI 公式 Jev API と**完全なワイヤ互換（Wire-Compatible）**�
 
 ---
 
-## 3. 認証仕様
+## 3. 認証仕様 (3段階認証モード)
 
-- 環境変数 `TYPESAFE_API_KEY` が設定されている場合: `Authorization: Bearer <key>` を検証。不一致時は 401。
-- 未設定（ローカル開発環境）: 認証バイパス。
+環境変数および `config.json` による3段階の柔軟な認証モード切替に対応（優先順位: `環境変数 > config.json`）。
+
+- 設定項目:
+  - モード指定: 環境変数 `JEV_AUTH` または `config.json` 内 `"auth_mode"` (`off` | `loose` | `strict`, デフォルト: `off`)
+  - APIキー指定: 環境変数 `TYPESAFE_API_KEY` または `config.json` 内 `"api_key"`
+
+### 動作モード一覧
+
+1. **`off` (デフォルト / 未設定)**:
+   - 完全バイパス。
+   - `Authorization` ヘッダーの有無にかかわらず全リクエストを許可 (200 OK)。
+   - 公式 SDK 自動付与のダミートークンやローカルスクリプトが無設定で即座に動作。
+
+2. **`loose` (柔軟検証モード)**:
+   - ヘッダー未指定時はローカル利用として許可 (200 OK)。
+   - `Authorization` ヘッダーが指定された場合のみ、設定キーとの一致を検証（不一致時は 401）。
+
+3. **`strict` (厳格検証モード)**:
+   - 互換性テストおよび本番想定テスト用。
+   - 一致する `Authorization: Bearer <key>` が必須（未指定または不一致時は 401）。
 
 ---
 

@@ -98,6 +98,8 @@ caller  -->  local-jev :8090  -->  llama-server :8080 (3 slots)
 * `TestChatPrompt`: Qwen2.5 `<|im_start|>` テンプレートの一致確認。
 * `TestHandlersWithMockLlama`: `/jev/stop` (CoT) および `/jev/scan` (Semantic) の JSON 契約検証。
 * `TestIsPortInUse`: ポート競合検知の検証。
+* `TestAuthValidation`: 3段階認証モード (`off`, `loose`, `strict`, `config.json` フォールバック) 全パターン検証。
+* `TestSystemOneInputValidation`: TypeSafe wire-compatible `/v1/systemone` 契約・バリデーション検証。
 
 ### コンパイル確認
 * `build/bin/local-jev.exe`: Wails v2 GUI バイナリ 正常ビルド完了。

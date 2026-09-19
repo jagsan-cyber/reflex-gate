@@ -44,10 +44,12 @@ type RequestEvent struct {
 }
 
 type Server struct {
-	Llama   *Llama
-	http    *http.Server
-	mu      sync.Mutex
-	OnEvent func(ev RequestEvent)
+	Llama    *Llama
+	http     *http.Server
+	mu       sync.Mutex
+	OnEvent  func(ev RequestEvent)
+	AuthMode string // off | loose | strict
+	APIKey   string
 }
 
 func (s *Server) emit(ev RequestEvent) {
@@ -61,7 +63,10 @@ func (s *Server) emit(ev RequestEvent) {
 }
 
 func NewServer(llamaRoot string) *Server {
-	return &Server{Llama: NewLlama(llamaRoot)}
+	return &Server{
+		Llama:    NewLlama(llamaRoot),
+		AuthMode: "off",
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -431,7 +436,7 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) models(w http.ResponseWriter, r *http.Request) {
-	if !checkAuth(r) {
+	if !s.checkAuth(r) {
 		writeJSON(w, 401, map[string]string{"detail": "Invalid API key"})
 		return
 	}
@@ -440,17 +445,49 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func checkAuth(r *http.Request) bool {
-	apiKey := os.Getenv("TYPESAFE_API_KEY")
-	if apiKey == "" {
+func (s *Server) checkAuth(r *http.Request) bool {
+	// Mode precedence: env JEV_AUTH > s.AuthMode > default "off"
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("JEV_AUTH")))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(s.AuthMode))
+	}
+	if mode == "" || mode == "off" {
+		// Complete bypass: 200 OK regardless of whether header is missing or dummy
 		return true
 	}
-	auth := r.Header.Get("Authorization")
-	parts := strings.SplitN(auth, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return false
+
+	// Key precedence: env TYPESAFE_API_KEY > s.APIKey
+	expectedKey := strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY"))
+	if expectedKey == "" {
+		expectedKey = strings.TrimSpace(s.APIKey)
 	}
-	return parts[1] == apiKey
+
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	var token string
+	if auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			token = strings.TrimSpace(parts[1])
+		}
+	}
+
+	if mode == "loose" {
+		// If key is not configured or no Authorization header sent, allow access.
+		if expectedKey == "" || auth == "" {
+			return true
+		}
+		return token != "" && token == expectedKey
+	}
+
+	if mode == "strict" {
+		// Strict test mode: must provide Authorization: Bearer <key> matching expectedKey
+		if expectedKey == "" {
+			return true // if no key is configured, cannot validate
+		}
+		return token != "" && token == expectedKey
+	}
+
+	return true
 }
 
 type systemOneQuestion struct {
@@ -466,7 +503,7 @@ type systemOneRequest struct {
 }
 
 func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
-	if !checkAuth(r) {
+	if !s.checkAuth(r) {
 		writeJSON(w, 401, map[string]string{"detail": "Invalid API key"})
 		return
 	}

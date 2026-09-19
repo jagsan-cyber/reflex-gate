@@ -5,9 +5,12 @@ import (
 	"os"
 
 	"local-jev/internal/api"
+	"local-jev/internal/config"
 )
 
 func main() {
+	cfg := config.Load()
+
 	addr := os.Getenv("JEV_PORT")
 	if addr == "" {
 		addr = "8090"
@@ -21,7 +24,10 @@ func main() {
 		root = "http://127.0.0.1:8080"
 	}
 	s := api.NewServer(root)
-	log.Println("JEV API", host+":"+addr)
+	s.AuthMode = cfg.AuthMode
+	s.APIKey = cfg.APIKey
+
+	log.Printf("JEV API %s:%s (auth_mode=%s)", host, addr, s.AuthMode)
 	if err := s.Start(host + ":" + addr); err != nil {
 		log.Fatal(err)
 	}
