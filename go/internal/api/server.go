@@ -246,6 +246,7 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := jsonPathString(data, "choices", 0, "message", "content")
+	log.Printf("[DEBUG Extract Output] raw len=%d: %q", len(text), text)
 	cleanJSON := strings.TrimSpace(text)
 	if strings.HasPrefix(cleanJSON, "```") {
 		if idx := strings.Index(cleanJSON, "\n"); idx != -1 {

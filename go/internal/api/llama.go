@@ -188,7 +188,7 @@ func (l *Llama) ScanLog(logText string) (severity, finding string, metrics map[s
 	prompt := schema.ChatPrompt(schema.ScanSystem, userContent)
 
 	t0 := time.Now()
-	data, err := l.Completion(prompt, 60, schema.SlotScan, 0, schema.ScanGrammar, nil)
+	data, err := l.Completion(prompt, 100, schema.SlotScan, 0, schema.ScanGrammar, nil)
 	if err != nil {
 		return "", "", nil, err
 	}
