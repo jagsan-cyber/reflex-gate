@@ -30,3 +30,12 @@ Fyne desktop builds typically need a C compiler (MinGW) on Windows (`CGO_ENABLED
 
 Drop `llama-server.exe` and a `.gguf`, or use auto-download, then **JEV 起動**.
 
+On start the app probes the GPU (WMI) and free RAM, then picks:
+
+- NVIDIA -> CUDA zip (falls back to Vulkan)
+- Radeon / Intel / other -> Vulkan zip
+- no GPU -> CPU AVX2 zip
+- `-c` 32768 / 16384 / 8192 from VRAM and free RAM
+
+Default UI mode is **自動判定**. Expand 詳細設定 to override.
+

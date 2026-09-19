@@ -13,16 +13,29 @@ type Runner struct {
 	cmd  *exec.Cmd
 }
 
-func (r *Runner) Start(llamaExe, model string) error {
+type Options struct {
+	Context   int
+	Parallel  int
+	GPULayers int
+}
+
+func (r *Runner) Start(llamaExe, model string, opt Options) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cmd != nil && r.cmd.Process != nil {
 		return fmt.Errorf("already running")
 	}
+	if opt.Context <= 0 {
+		opt.Context = 32768
+	}
+	if opt.Parallel <= 0 {
+		opt.Parallel = 2
+	}
 	cmd := exec.Command(llamaExe,
 		"-m", model,
-		"-c", "32768",
-		"--parallel", "2",
+		"-c", fmt.Sprintf("%d", opt.Context),
+		"--parallel", fmt.Sprintf("%d", opt.Parallel),
+		"--n-gpu-layers", fmt.Sprintf("%d", opt.GPULayers),
 		"--cache-type-k", "f16",
 		"--cache-type-v", "f16",
 		"-fa", "1",

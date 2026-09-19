@@ -9,6 +9,10 @@ import (
 type Config struct {
 	LlamaServer string `json:"llama_server"`
 	Model       string `json:"model"`
+	Mode        string `json:"mode"` // auto | manual
+	Context     int    `json:"context"`
+	Backend     string `json:"backend"`
+	GPULayers   int    `json:"gpu_layers"`
 }
 
 func Path() string {

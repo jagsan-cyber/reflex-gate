@@ -19,7 +19,7 @@ const (
 
 type Progress func(label string, done, total int64)
 
-func FetchAll(baseDir string, prog Progress) (llamaExe, modelPath string, err error) {
+func FetchAll(baseDir, backend string, prog Progress) (llamaExe, modelPath string, err error) {
 	modelDir := filepath.Join(baseDir, "models")
 	binDir := filepath.Join(baseDir, "bin")
 	if err = os.MkdirAll(modelDir, 0o755); err != nil {
@@ -40,7 +40,7 @@ func FetchAll(baseDir string, prog Progress) (llamaExe, modelPath string, err er
 		return
 	}
 	zipPath := filepath.Join(binDir, "llama-server.zip")
-	url, err := latestLlamaZipURL()
+	url, err := latestLlamaZipURL(backend)
 	if err != nil {
 		return
 	}
@@ -65,7 +65,7 @@ func FetchAll(baseDir string, prog Progress) (llamaExe, modelPath string, err er
 	return
 }
 
-func latestLlamaZipURL() (string, error) {
+func latestLlamaZipURL(flavor string) (string, error) {
 	req, _ := http.NewRequest(http.MethodGet, ReleaseAPI, nil)
 	req.Header.Set("User-Agent", "local-jev")
 	resp, err := http.DefaultClient.Do(req)
@@ -86,24 +86,50 @@ func latestLlamaZipURL() (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return "", err
 	}
-	var vulkan, cpu string
+	var vulkan, cuda12, cuda, cpu string
 	for _, a := range rel.Assets {
 		n := strings.ToLower(a.Name)
-		if !strings.Contains(n, "win") || !strings.HasSuffix(n, ".zip") {
+		if !strings.Contains(n, "win") || !strings.HasSuffix(n, ".zip") || !strings.Contains(n, "x64") {
 			continue
 		}
-		if strings.Contains(n, "vulkan") && strings.Contains(n, "x64") {
+		switch {
+		case strings.Contains(n, "vulkan"):
 			vulkan = a.URL
-		}
-		if (strings.Contains(n, "cpu") || strings.Contains(n, "avx2")) && strings.Contains(n, "x64") && cpu == "" {
-			cpu = a.URL
+		case strings.Contains(n, "cu12") || strings.Contains(n, "cuda-12") || strings.Contains(n, "cuda12"):
+			cuda12 = a.URL
+		case strings.Contains(n, "cuda"):
+			cuda = a.URL
+		case strings.Contains(n, "cpu") || strings.Contains(n, "avx2"):
+			if cpu == "" {
+				cpu = a.URL
+			}
 		}
 	}
-	if vulkan != "" {
-		return vulkan, nil
-	}
-	if cpu != "" {
-		return cpu, nil
+	switch strings.ToLower(flavor) {
+	case "cuda":
+		if cuda12 != "" {
+			return cuda12, nil
+		}
+		if cuda != "" {
+			return cuda, nil
+		}
+		if vulkan != "" {
+			return vulkan, nil
+		}
+	case "cpu":
+		if cpu != "" {
+			return cpu, nil
+		}
+		if vulkan != "" {
+			return vulkan, nil
+		}
+	default:
+		if vulkan != "" {
+			return vulkan, nil
+		}
+		if cpu != "" {
+			return cpu, nil
+		}
 	}
 	return "", fmt.Errorf("no Windows llama-server zip in latest release")
 }
