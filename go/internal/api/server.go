@@ -246,16 +246,27 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := jsonPathString(data, "choices", 0, "message", "content")
-	start, end := strings.Index(text, "{"), strings.LastIndex(text, "}")
+	cleanJSON := strings.TrimSpace(text)
+	if strings.HasPrefix(cleanJSON, "```") {
+		if idx := strings.Index(cleanJSON, "\n"); idx != -1 {
+			cleanJSON = cleanJSON[idx+1:]
+		}
+		if idx := strings.LastIndex(cleanJSON, "```"); idx != -1 {
+			cleanJSON = cleanJSON[:idx]
+		}
+		cleanJSON = strings.TrimSpace(cleanJSON)
+	}
+
+	start, end := strings.Index(cleanJSON, "{"), strings.LastIndex(cleanJSON, "}")
 	if start < 0 || end <= start {
-		log.Printf("[WARN] Extract did not return JSON brackets | raw: %q", text)
+		log.Printf("[WARN] Extract did not return JSON brackets | raw: %q | cleaned: %q", text, cleanJSON)
 		writeJSON(w, 422, map[string]string{"detail": "JEV did not return JSON: " + text})
 		return
 	}
-	raw := text[start : end+1]
+	raw := cleanJSON[start : end+1]
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		log.Printf("[WARN] Extract JSON unmarshal failed: %v | raw: %q", err, text)
+		log.Printf("[ERROR] Extract JSON parse failed: %v | raw: %q | cleaned: %q", err, text, raw)
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}

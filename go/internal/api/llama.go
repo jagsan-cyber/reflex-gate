@@ -196,6 +196,12 @@ func (l *Llama) ScanLog(logText string) (severity, finding string, metrics map[s
 
 	content, _ := data["content"].(string)
 	severity, finding = schema.ParseScan(content)
+	if severity == "Warning" {
+		lowerLog := strings.ToLower(logText)
+		if strings.Contains(lowerLog, "0 critical") && (strings.Contains(lowerLog, "audit") || strings.Contains(lowerLog, "scanned packages") || strings.Contains(lowerLog, "vulnerabilities")) {
+			severity = "Safe"
+		}
+	}
 	metrics = TimingsMetrics(data, wallS)
 	metrics["raw"] = strings.TrimSpace(content)
 	return severity, finding, metrics, nil
