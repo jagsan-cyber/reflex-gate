@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+results/raw.jsonl
+results/meta.json
+server.log
+server.err
+*.log
+.DS_Store
+Thumbs.db
