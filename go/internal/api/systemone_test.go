@@ -42,6 +42,41 @@ func TestModelsEndpoint(t *testing.T) {
 	}
 }
 
+func TestHealthAuthField(t *testing.T) {
+	s := NewServer("http://127.0.0.1:9999")
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	// Default: auth == "off"
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("failed to GET /health: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+	if body["auth"] != "off" {
+		t.Errorf("expected auth=off, got %v", body["auth"])
+	}
+
+	// Environment variable JEV_AUTH=strict
+	os.Setenv("JEV_AUTH", "strict")
+	defer os.Unsetenv("JEV_AUTH")
+	resp2, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	defer resp2.Body.Close()
+	var body2 map[string]any
+	_ = json.NewDecoder(resp2.Body).Decode(&body2)
+	if body2["auth"] != "strict" {
+		t.Errorf("expected auth=strict, got %v", body2["auth"])
+	}
+}
+
 func TestAuthValidation(t *testing.T) {
 	// 1. Default mode ("off"): requests succeed with or without header
 	t.Run("mode_off_default", func(t *testing.T) {

@@ -160,14 +160,26 @@ type errStr string
 
 func (e errStr) Error() string { return string(e) }
 
+func (s *Server) authMode() string {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("JEV_AUTH")))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(s.AuthMode))
+	}
+	if mode != "loose" && mode != "strict" {
+		return "off"
+	}
+	return mode
+}
+
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	id, n, err := s.Llama.ModelsOK()
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"ok": false, "llm_ok": false, "llm": s.Llama.Root, "n_slots": n, "error": err.Error()})
+		writeJSON(w, 200, map[string]any{"ok": false, "llm_ok": false, "llm": s.Llama.Root, "n_slots": n, "auth": s.authMode(), "error": err.Error()})
 		return
 	}
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "llm_ok": true, "llm": s.Llama.Root, "model": id, "n_slots": n,
+		"auth": s.authMode(),
 		"slots": map[string]int{
 			"decision": schema.SlotDecision,
 			"extract":  schema.SlotExtract,
@@ -446,12 +458,8 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) checkAuth(r *http.Request) bool {
-	// Mode precedence: env JEV_AUTH > s.AuthMode > default "off"
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("JEV_AUTH")))
-	if mode == "" {
-		mode = strings.ToLower(strings.TrimSpace(s.AuthMode))
-	}
-	if mode == "" || mode == "off" {
+	mode := s.authMode()
+	if mode == "off" {
 		// Complete bypass: 200 OK regardless of whether header is missing or dummy
 		return true
 	}
