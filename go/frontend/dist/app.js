@@ -688,7 +688,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         gpu_layers: b === "cpu" ? 0 : 99,
         jev_port: parseInt(elements.inputJevPort.value, 10) || 8090,
         llama_port: parseInt(elements.inputLlamaPort.value, 10) || 8080,
-        host: "127.0.0.1",
+        host: "0.0.0.0",
         lang: currentLang
       };
       try {

@@ -39,7 +39,7 @@ func Load() Config {
 	c := Config{
 		JevPort:   8090,
 		LlamaPort: 8080,
-		Host:      "127.0.0.1",
+		Host:      "0.0.0.0",
 		Context:   8192,
 		Lang:      "ja",
 	}
@@ -55,7 +55,7 @@ func Load() Config {
 		c.LlamaPort = 8080
 	}
 	if c.Host == "" {
-		c.Host = "127.0.0.1"
+		c.Host = "0.0.0.0"
 	}
 	if c.Lang != "en" && c.Lang != "ja" {
 		c.Lang = "ja"

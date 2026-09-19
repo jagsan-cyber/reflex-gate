@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -294,7 +295,7 @@ func (a *App) StartServer(dto ConfigDTO) error {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	if proc.IsPortInUse(a.cfg.Host, a.cfg.LlamaPort) {
+	if proc.IsPortInUse("127.0.0.1", a.cfg.LlamaPort) {
 		a.mu.Unlock()
 		errMsg := fmt.Sprintf("Llama Port %d is already in use by another application. Please change the port in Settings.", a.cfg.LlamaPort)
 		if a.cfg.Lang != "en" {
@@ -331,7 +332,7 @@ func (a *App) StartServer(dto ConfigDTO) error {
 		Parallel:  3,
 		GPULayers: a.cfg.GPULayers,
 		LlamaPort: a.cfg.LlamaPort,
-		Host:      a.cfg.Host,
+		Host:      "127.0.0.1",
 	}
 
 	a.starting = true
@@ -445,7 +446,7 @@ func (a *App) StartServer(dto ConfigDTO) error {
 		a.apiRunning = true
 		bindHost := a.cfg.Host
 		if bindHost == "" {
-			bindHost = "127.0.0.1"
+			bindHost = "0.0.0.0"
 		}
 		bindAddr := fmt.Sprintf("%s:%d", bindHost, a.cfg.JevPort)
 		a.mu.Unlock()
@@ -560,10 +561,22 @@ func (a *App) OpenDemo() error {
 	return nil
 }
 
+func getLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err == nil {
+		defer conn.Close()
+		localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+		if ok {
+			return localAddr.IP.String()
+		}
+	}
+	return "127.0.0.1"
+}
+
 func (a *App) CopyURL() error {
 	host := a.cfg.Host
 	if host == "" || host == "0.0.0.0" {
-		host = "127.0.0.1"
+		host = getLocalIP()
 	}
 	port := a.cfg.JevPort
 	if port <= 0 {

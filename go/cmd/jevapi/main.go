@@ -14,7 +14,7 @@ func main() {
 	}
 	host := os.Getenv("JEV_HOST")
 	if host == "" {
-		host = "127.0.0.1"
+		host = "0.0.0.0"
 	}
 	root := os.Getenv("JEV_LLM_BASE_URL")
 	if root == "" {
