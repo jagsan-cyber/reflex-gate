@@ -540,7 +540,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		t0 := time.Now()
-		result, dist, logps, _, _, _, err := s.Llama.ChatDecide(legacyCheck.Question, opts, legacyCheck.Context)
+		result, dist, _, _, _, _, err := s.Llama.ChatDecide(legacyCheck.Question, opts, legacyCheck.Context)
 		if err != nil {
 			writeJSON(w, 502, map[string]string{"detail": err.Error()})
 			return
@@ -579,12 +579,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			}
 			noulVal := math.Round(pPositive*100) / 100
 
-			posLogit := schema.FindLogprob(logps, "yes", "true", "Yes", "True")
-			negLogit := schema.FindLogprob(logps, "no", "false", "No", "False")
-			deltaZ := posLogit - negLogit
-			temp := schema.GetNoulTemperature()
-			log.Printf("[DEBUG NOUL] qid=%s | posLogit=%.4f, negLogit=%.4f, deltaZ=%.4f, T=%.4f, finalNoul=%.4f",
-				"legacy", posLogit, negLogit, deltaZ, temp, noulVal)
+			log.Printf("[DEBUG NOUL] qid=legacy assigned direct prob=%.2f", noulVal)
 
 			dist["true"] = noulVal
 			dist["false"] = math.Round((1.0-noulVal)*100) / 100
@@ -828,7 +823,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				promptText = promptText + "\nCriteria:\n" + vq.rawCrit
 			}
 
-			choice, dist, logps, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
+			choice, dist, _, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
 			if err != nil {
 				resChan <- qResult{id: vq.id, err: err}
 				return
@@ -872,12 +867,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				noulVal := math.Round(pPositive*100) / 100
 				ans["noul"] = noulVal
 
-				posLogit := schema.FindLogprob(logps, "yes", "true", "Yes", "True")
-				negLogit := schema.FindLogprob(logps, "no", "false", "No", "False")
-				deltaZ := posLogit - negLogit
-				T := schema.GetNoulTemperature()
-				log.Printf("[DEBUG NOUL] qid=%s | posLogit=%.4f, negLogit=%.4f, deltaZ=%.4f, T=%.4f, finalNoul=%.4f",
-					vq.id, posLogit, negLogit, deltaZ, T, noulVal)
+				log.Printf("[DEBUG NOUL] qid=%s assigned direct prob=%.2f", vq.id, noulVal)
 
 			case "choice":
 				conf := dist[choice]
