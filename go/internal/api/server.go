@@ -546,16 +546,50 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if legacyCheck.Type == "noul" {
-			temp := schema.GetNoulTemperature()
-			zTrue := schema.FindLogprob(logps, "true", "yes")
-			zFalse := schema.FindLogprob(logps, "false", "no")
-			pTrue := schema.CalibrateNoul(zTrue, zFalse, temp)
-			dist["true"] = math.Round(pTrue*100) / 100
-			dist["false"] = math.Round((1.0-pTrue)*100) / 100
-			if _, ok := dist["Yes"]; ok {
-				dist["Yes"] = dist["true"]
-				dist["No"] = dist["false"]
+			pPositive := 0.0
+			if p, ok := dist["yes"]; ok {
+				pPositive = p
+			} else if p, ok := dist["true"]; ok {
+				pPositive = p
+			} else if p, ok := dist["Yes"]; ok {
+				pPositive = p
+			} else if p, ok := dist["True"]; ok {
+				pPositive = p
+			} else {
+				for k, v := range dist {
+					lk := strings.ToLower(strings.TrimSpace(k))
+					if lk == "yes" || lk == "true" {
+						pPositive = v
+						break
+					}
+				}
 			}
+			if pPositive == 0.0 && (strings.EqualFold(result, "yes") || strings.EqualFold(result, "true")) {
+				if cP, ok := dist[result]; ok && cP > 0 {
+					pPositive = cP
+				} else {
+					pPositive = 0.95
+				}
+			}
+			if pPositive < 0 {
+				pPositive = 0
+			}
+			if pPositive > 1 {
+				pPositive = 1
+			}
+			noulVal := math.Round(pPositive*100) / 100
+
+			posLogit := schema.FindLogprob(logps, "yes", "true", "Yes", "True")
+			negLogit := schema.FindLogprob(logps, "no", "false", "No", "False")
+			deltaZ := posLogit - negLogit
+			temp := schema.GetNoulTemperature()
+			log.Printf("[DEBUG NOUL] qid=%s | posLogit=%.4f, negLogit=%.4f, deltaZ=%.4f, T=%.4f, finalNoul=%.4f",
+				"legacy", posLogit, negLogit, deltaZ, temp, noulVal)
+
+			dist["true"] = noulVal
+			dist["false"] = math.Round((1.0-noulVal)*100) / 100
+			dist["yes"] = dist["true"]
+			dist["no"] = dist["false"]
 		}
 		p := dist[result]
 		latMs := time.Since(t0).Milliseconds()
@@ -794,7 +828,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				promptText = promptText + "\nCriteria:\n" + vq.rawCrit
 			}
 
-			choice, dist, _, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
+			choice, dist, logps, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
 			if err != nil {
 				resChan <- qResult{id: vq.id, err: err}
 				return
@@ -835,7 +869,15 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				if pPositive > 1 {
 					pPositive = 1
 				}
-				ans["noul"] = math.Round(pPositive*100) / 100
+				noulVal := math.Round(pPositive*100) / 100
+				ans["noul"] = noulVal
+
+				posLogit := schema.FindLogprob(logps, "yes", "true", "Yes", "True")
+				negLogit := schema.FindLogprob(logps, "no", "false", "No", "False")
+				deltaZ := posLogit - negLogit
+				T := schema.GetNoulTemperature()
+				log.Printf("[DEBUG NOUL] qid=%s | posLogit=%.4f, negLogit=%.4f, deltaZ=%.4f, T=%.4f, finalNoul=%.4f",
+					vq.id, posLogit, negLogit, deltaZ, T, noulVal)
 
 			case "choice":
 				conf := dist[choice]
