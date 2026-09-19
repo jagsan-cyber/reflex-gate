@@ -635,74 +635,320 @@ func TestGetNoulSystemPrompt(t *testing.T) {
 }
 
 func TestSystemOneNoulViaChoice(t *testing.T) {
-	mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []map[string]any{
-				{
-					"message": map[string]any{"role": "assistant", "content": "no"},
-					"logprobs": map[string]any{
-						"content": []map[string]any{
-							{
-								"token": "no", "logprob": -0.27,
-								"top_logprobs": []map[string]any{
-									{"token": "no", "logprob": -0.27},
-									{"token": "yes", "logprob": -1.45},
+	t.Run("BaselineNegative_LowNoul", func(t *testing.T) {
+		mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{"role": "assistant", "content": "no"},
+						"logprobs": map[string]any{
+							"content": []map[string]any{
+								{
+									"token": "no", "logprob": -0.27,
+									"top_logprobs": []map[string]any{
+										{"token": "no", "logprob": -0.27},
+										{"token": "yes", "logprob": -1.45},
+									},
 								},
 							},
 						},
 					},
 				},
+				"usage": map[string]any{"prompt_tokens": 50, "completion_tokens": 1},
+			})
+		}))
+		defer mockLlama.Close()
+
+		s := NewServer(mockLlama.URL)
+		ts := httptest.NewServer(s.Handler())
+		defer ts.Close()
+
+		payload := map[string]any{
+			"model": "jev-latest",
+			"state": "0 tests collected. Process finished with exit code 0.",
+			"questions": map[string]any{
+				"should_stop": map[string]any{
+					"type":         "noul",
+					"instructions": "Should the execution stop now?",
+				},
 			},
-			"usage": map[string]any{"prompt_tokens": 50, "completion_tokens": 1},
-		})
-	}))
-	defer mockLlama.Close()
+		}
+		b, _ := json.Marshal(payload)
+		resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
+		if err != nil {
+			t.Fatalf("failed request: %v", err)
+		}
+		defer resp.Body.Close()
 
-	s := NewServer(mockLlama.URL)
-	ts := httptest.NewServer(s.Handler())
-	defer ts.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
 
-	payload := map[string]any{
-		"model": "jev-latest",
-		"state": "0 tests collected. Process finished with exit code 0.",
-		"questions": map[string]any{
-			"should_stop": map[string]any{
-				"type":         "noul",
-				"instructions": "Should the execution stop now?",
+		var res struct {
+			Model   string `json:"model"`
+			Answers map[string]struct {
+				Type string   `json:"type"`
+				Noul *float64 `json:"noul"`
+			} `json:"answers"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			t.Fatalf("decode failed: %v", err)
+		}
+
+		ans, ok := res.Answers["should_stop"]
+		if !ok {
+			t.Fatalf("missing answer for should_stop")
+		}
+		if ans.Type != "noul" {
+			t.Errorf("expected type noul, got %s", ans.Type)
+		}
+		if ans.Noul == nil || *ans.Noul > 0.35 || *ans.Noul < 0.0 {
+			t.Errorf("expected healthy low noul in [0.0, 0.35], got %v", ans.Noul)
+		}
+	})
+
+	t.Run("ParityAndNoSigmoid_0.34", func(t *testing.T) {
+		// Verify parity between noul and choice positive prob on identical input,
+		// and guarantee raw probability 0.34 does NOT pass through temperature/sigmoid.
+		mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{"role": "assistant", "content": "no"},
+						"logprobs": map[string]any{
+							"content": []map[string]any{
+								{
+									"token": "no", "logprob": math.Log(0.66),
+									"top_logprobs": []map[string]any{
+										{"token": "no", "logprob": math.Log(0.66)},
+										{"token": "yes", "logprob": math.Log(0.34)},
+									},
+								},
+							},
+						},
+					},
+				},
+				"usage": map[string]any{"prompt_tokens": 50, "completion_tokens": 1},
+			})
+		}))
+		defer mockLlama.Close()
+
+		s := NewServer(mockLlama.URL)
+		ts := httptest.NewServer(s.Handler())
+		defer ts.Close()
+
+		payload := map[string]any{
+			"model": "jev-latest",
+			"state": "Sample system state for calibration validation.",
+			"questions": map[string]any{
+				"q_noul": map[string]any{
+					"type":         "noul",
+					"instructions": "Is the condition met?",
+				},
+				"q_choice": map[string]any{
+					"type":         "choice",
+					"instructions": "Is the condition met?",
+					"criteria": map[string]string{
+						"yes": "Condition is met",
+						"no":  "Condition is not met",
+					},
+				},
 			},
-		},
-	}
-	b, _ := json.Marshal(payload)
-	resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
-	if err != nil {
-		t.Fatalf("failed request: %v", err)
-	}
-	defer resp.Body.Close()
+		}
+		b, _ := json.Marshal(payload)
+		resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
+		if err != nil {
+			t.Fatalf("failed request: %v", err)
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
+		if resp.StatusCode != 200 {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
 
-	var res struct {
-		Model   string `json:"model"`
-		Answers map[string]struct {
-			Type string   `json:"type"`
-			Noul *float64 `json:"noul"`
-		} `json:"answers"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		t.Fatalf("decode failed: %v", err)
-	}
+		var res struct {
+			Answers map[string]struct {
+				Type          string             `json:"type"`
+				Noul          *float64           `json:"noul"`
+				Choice        string             `json:"choice"`
+				Confidence    float64            `json:"confidence"`
+				Probabilities map[string]float64 `json:"probabilities"`
+			} `json:"answers"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			t.Fatalf("decode failed: %v", err)
+		}
 
-	ans, ok := res.Answers["should_stop"]
-	if !ok {
-		t.Fatalf("missing answer for should_stop")
-	}
-	if ans.Type != "noul" {
-		t.Errorf("expected type noul, got %s", ans.Type)
-	}
-	if ans.Noul == nil || *ans.Noul > 0.35 {
-		t.Errorf("expected healthy low noul <= 0.35, got %v", ans.Noul)
-	}
+		noulAns, okN := res.Answers["q_noul"]
+		if !okN || noulAns.Noul == nil {
+			t.Fatalf("missing or nil q_noul: %+v", noulAns)
+		}
+		choiceAns, okC := res.Answers["q_choice"]
+		if !okC {
+			t.Fatalf("missing q_choice: %+v", res.Answers)
+		}
+
+		// 1. Range check: 0.0 <= noul <= 1.0
+		if *noulAns.Noul < 0.0 || *noulAns.Noul > 1.0 {
+			t.Errorf("noul out of range [0.0, 1.0]: %f", *noulAns.Noul)
+		}
+
+		// 2. Parity check: noul matches choice probabilities["yes"] within rounding precision
+		choiceYesProb := choiceAns.Probabilities["yes"]
+		if math.Abs(*noulAns.Noul-choiceYesProb) > 0.01 {
+			t.Errorf("parity mismatch: noul=%f, choice[yes]=%f", *noulAns.Noul, choiceYesProb)
+		}
+
+		// 3. No sigmoid/temperature scaling check:
+		// Raw prob is 0.34. If sigmoid with T=0.2 were applied, deltaZ = ln(0.34)-ln(0.66) = -0.6633,
+		// scaled = -3.3165 -> 1/(1+exp(3.3165)) = ~0.035.
+		// Direct assignment must yield 0.34 (+- 0.01).
+		if math.Abs(*noulAns.Noul-0.34) > 0.01 {
+			t.Errorf("expected direct unscaled prob ~0.34, got %f (sigmoid distortion detected)", *noulAns.Noul)
+		}
+	})
+
+	t.Run("PrecisionRounding_0.760123", func(t *testing.T) {
+		// Verify probability of 0.760123... rounds exactly to 0.76
+		pRaw := 0.76012345
+		mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{"role": "assistant", "content": "yes"},
+						"logprobs": map[string]any{
+							"content": []map[string]any{
+								{
+									"token": "yes", "logprob": math.Log(pRaw),
+									"top_logprobs": []map[string]any{
+										{"token": "yes", "logprob": math.Log(pRaw)},
+										{"token": "no", "logprob": math.Log(1.0 - pRaw)},
+									},
+								},
+							},
+						},
+					},
+				},
+				"usage": map[string]any{"prompt_tokens": 50, "completion_tokens": 1},
+			})
+		}))
+		defer mockLlama.Close()
+
+		s := NewServer(mockLlama.URL)
+		ts := httptest.NewServer(s.Handler())
+		defer ts.Close()
+
+		payload := map[string]any{
+			"model": "jev-latest",
+			"state": "Sample state for rounding verification.",
+			"questions": map[string]any{
+				"q_round": map[string]any{
+					"type":         "noul",
+					"instructions": "Should proceed?",
+				},
+			},
+		}
+		b, _ := json.Marshal(payload)
+		resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
+		if err != nil {
+			t.Fatalf("failed request: %v", err)
+		}
+		defer resp.Body.Close()
+
+		var res struct {
+			Answers map[string]struct {
+				Type string   `json:"type"`
+				Noul *float64 `json:"noul"`
+			} `json:"answers"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			t.Fatalf("decode failed: %v", err)
+		}
+
+		ans := res.Answers["q_round"]
+		if ans.Noul == nil {
+			t.Fatalf("missing noul answer")
+		}
+		if *ans.Noul != 0.76 {
+			t.Errorf("expected exact rounded 0.76 from 0.760123..., got %f", *ans.Noul)
+		}
+		if *ans.Noul < 0.0 || *ans.Noul > 1.0 {
+			t.Errorf("noul out of range [0.0, 1.0]: %f", *ans.Noul)
+		}
+	})
+
+	t.Run("Boundaries", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			pYes     float64
+			expected float64
+		}{
+			{"near_zero", 0.001, 0.00},
+			{"near_one", 0.999, 1.00},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"choices": []map[string]any{
+							{
+								"message": map[string]any{"role": "assistant", "content": "yes"},
+								"logprobs": map[string]any{
+									"content": []map[string]any{
+										{
+											"token": "yes", "logprob": math.Log(tc.pYes),
+											"top_logprobs": []map[string]any{
+												{"token": "yes", "logprob": math.Log(tc.pYes)},
+												{"token": "no", "logprob": math.Log(1.0 - tc.pYes)},
+											},
+										},
+									},
+								},
+							},
+						},
+						"usage": map[string]any{"prompt_tokens": 50, "completion_tokens": 1},
+					})
+				}))
+				defer mockLlama.Close()
+
+				s := NewServer(mockLlama.URL)
+				ts := httptest.NewServer(s.Handler())
+				defer ts.Close()
+
+				payload := map[string]any{
+					"model": "jev-latest",
+					"state": "Boundary check",
+					"questions": map[string]any{
+						"q": map[string]any{"type": "noul", "instructions": "boundary?"},
+					},
+				}
+				b, _ := json.Marshal(payload)
+				resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
+				if err != nil {
+					t.Fatalf("request failed: %v", err)
+				}
+				defer resp.Body.Close()
+
+				var res struct {
+					Answers map[string]struct {
+						Noul *float64 `json:"noul"`
+					} `json:"answers"`
+				}
+				_ = json.NewDecoder(resp.Body).Decode(&res)
+				ans := res.Answers["q"]
+				if ans.Noul == nil {
+					t.Fatalf("missing noul")
+				}
+				if *ans.Noul < 0.0 || *ans.Noul > 1.0 {
+					t.Errorf("out of range: %f", *ans.Noul)
+				}
+				if *ans.Noul != tc.expected {
+					t.Errorf("expected %f, got %f", tc.expected, *ans.Noul)
+				}
+			})
+		}
+	})
 }
