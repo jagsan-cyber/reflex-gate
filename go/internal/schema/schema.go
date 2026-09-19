@@ -25,19 +25,7 @@ Example (success, no error):
 
 Example (failure):
 {"status":"failed","error_code":"E101","files_changed":1,"tool":"mypy"}
-`
-	StopPrefixHeader = "You are a deterministic decision engine for autonomous agents.\nGoal: Determine if the agent task has fully completed so the loop should stop.\nAllowed labels: Yes, No."
-	StopTailAnchor   = "\n\n[Status Check]\nCompleted successfully? (Yes/No): "
-)
-
-// FormatStopPrompt builds an invariant prompt for differential prefill
-func FormatStopPrompt(logText string) string {
-	logText = strings.ReplaceAll(logText, "\r\n", "\n")
-	if strings.HasPrefix(logText, StopPrefixHeader) && strings.HasSuffix(logText, StopTailAnchor) {
-		return logText
-	}
-	return StopPrefixHeader + "\n\nExecution Log:\n" + logText + StopTailAnchor
-}
+`)
 
 
 var ErrorLine = regexp.MustCompile(`(?m)^\[(?:ERROR|FATAL)\][^\n]*`)
