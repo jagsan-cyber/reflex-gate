@@ -222,7 +222,7 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 	req := map[string]any{
 		"model":        "local",
 		"temperature":  0.0,
-		"max_tokens":   80,
+		"max_tokens":   256,
 		"messages": []map[string]string{
 			{"role": "system", "content": schema.SysB},
 			{"role": "user", "content": userMsg},
@@ -248,12 +248,14 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 	text := jsonPathString(data, "choices", 0, "message", "content")
 	start, end := strings.Index(text, "{"), strings.LastIndex(text, "}")
 	if start < 0 || end <= start {
+		log.Printf("[WARN] Extract did not return JSON brackets | raw: %q", text)
 		writeJSON(w, 422, map[string]string{"detail": "JEV did not return JSON: " + text})
 		return
 	}
 	raw := text[start : end+1]
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		log.Printf("[WARN] Extract JSON unmarshal failed: %v | raw: %q", err, text)
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}

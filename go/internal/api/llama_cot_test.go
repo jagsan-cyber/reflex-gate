@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 
 	"local-jev/internal/schema"
@@ -179,3 +180,54 @@ func TestHandlersWithMockLlama(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractSchemaPattern(t *testing.T) {
+	var schemaMap struct {
+		Properties struct {
+			ErrorCode struct {
+				Pattern string `json:"pattern"`
+			} `json:"error_code"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(schema.ExtractSchema(), &schemaMap); err != nil {
+		t.Fatalf("failed to unmarshal ExtractSchema: %v", err)
+	}
+
+	pat := schemaMap.Properties.ErrorCode.Pattern
+	if pat == "" {
+		t.Fatal("expected non-empty error_code pattern")
+	}
+
+	validCodes := []string{
+		"KEXEC-1024",
+		"E101",
+		"ERR_TIMEOUT",
+		"FAIL-9.1",
+		"SIGSEGV_11",
+		"ghp_token123",
+	}
+	invalidCodes := []string{
+		"has spaces",
+		"error!",
+		"code#1",
+		"a+b",
+	}
+
+	for _, code := range validCodes {
+		matched, err := regexp.MatchString(pat, code)
+		if err != nil {
+			t.Fatalf("invalid pattern %q: %v", pat, err)
+		}
+		if !matched {
+			t.Errorf("expected pattern %q to match %q", pat, code)
+		}
+	}
+
+	for _, code := range invalidCodes {
+		matched, _ := regexp.MatchString(pat, code)
+		if matched {
+			t.Errorf("expected pattern %q to reject %q", pat, code)
+		}
+	}
+}
+
