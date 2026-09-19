@@ -26,6 +26,19 @@ func NewLlama(root string) *Llama {
 	return &Llama{Root: root, Client: &http.Client{Timeout: 10 * time.Minute}}
 }
 
+func cleanModelName(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	raw = strings.ReplaceAll(raw, "\\", "/")
+	if idx := strings.LastIndex(raw, "/"); idx >= 0 {
+		raw = raw[idx+1:]
+	}
+	raw = strings.TrimSuffix(raw, ".gguf")
+	raw = strings.TrimSuffix(raw, ".bin")
+	return raw
+}
+
 func (l *Llama) ModelsOK() (string, int, error) {
 	resp, err := l.Client.Get(l.Root + "/v1/models")
 	if err != nil {
@@ -44,7 +57,7 @@ func (l *Llama) ModelsOK() (string, int, error) {
 	_ = json.NewDecoder(resp.Body).Decode(&body)
 	id := ""
 	if len(body.Data) > 0 {
-		id = body.Data[0].ID
+		id = cleanModelName(body.Data[0].ID)
 	}
 	n := 0
 	if sr, err := l.Client.Get(l.Root + "/slots"); err == nil {

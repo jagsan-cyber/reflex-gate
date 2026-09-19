@@ -77,6 +77,40 @@ func TestHealthAuthField(t *testing.T) {
 	}
 }
 
+func TestCleanModelName(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{
+			input: `C:\Users\fallo\Documents\llama.cpp-qwen3.8build\jev-bench\go\models\qwen2.5-coder-1.5b-instruct-q8_0.gguf`,
+			want:  "qwen2.5-coder-1.5b-instruct-q8_0",
+		},
+		{
+			input: "/opt/models/qwen2.5-coder-1.5b-instruct.gguf",
+			want:  "qwen2.5-coder-1.5b-instruct",
+		},
+		{
+			input: "qwen2.5-coder-1.5b-instruct-q8_0.gguf",
+			want:  "qwen2.5-coder-1.5b-instruct-q8_0",
+		},
+		{
+			input: "qwen2.5-coder-1.5b-instruct",
+			want:  "qwen2.5-coder-1.5b-instruct",
+		},
+		{
+			input: "",
+			want:  "",
+		},
+	}
+	for _, tc := range cases {
+		got := cleanModelName(tc.input)
+		if got != tc.want {
+			t.Errorf("cleanModelName(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestAuthValidation(t *testing.T) {
 	// 1. Default mode ("off"): requests succeed with or without header
 	t.Run("mode_off_default", func(t *testing.T) {
