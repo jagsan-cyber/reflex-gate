@@ -37,3 +37,34 @@ func TestBuildExtractUserPrompt(t *testing.T) {
 		t.Errorf("prompt1 and prompt2 should be identical!\nPrompt1:\n%s\n\nPrompt2:\n%s", prompt1, prompt2)
 	}
 }
+
+func TestSecretTokensShield(t *testing.T) {
+	positives := []string{
+		"GH_TOKEN=ghp_ABC123xyzSecretToken456Value",
+		"github_pat_11ABCD1234567890abcdefghijklmnopqrstuvwxyz",
+		"gho_1234567890abcdefghijklmnopqrstuvwxyz",
+		"AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+		"sk-proj-1234567890abcdef1234567890",
+		"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
+		"-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASC...\n-----END PRIVATE KEY-----",
+	}
+	for _, p := range positives {
+		if !reSecretTokens.MatchString(p) {
+			t.Errorf("expected secret token regex to match %q", p)
+		}
+	}
+
+	negatives := []string{
+		"TODO: update token tomorrow",
+		"Reminder: sync with github upstream later today.",
+		"npm audit: 0 critical, 2 low vulnerabilities",
+		"grep -i 'ERROR' /var/log/app.log: 0 matches",
+		"DeprecationWarning: pkg_resources is deprecated",
+		"status=passed, error_code=none",
+	}
+	for _, n := range negatives {
+		if reSecretTokens.MatchString(n) {
+			t.Errorf("expected secret token regex NOT to match %q", n)
+		}
+	}
+}

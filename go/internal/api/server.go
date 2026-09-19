@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,15 @@ import (
 
 	"local-jev/internal/schema"
 )
+
+var reSecretTokens = regexp.MustCompile(`(?i)(` +
+	`ghp_[A-Za-z0-9_]{20,}|` + // GitHub Personal Access Token
+	`github_pat_[A-Za-z0-9_]{22,}|` + // GitHub Fine-grained PAT
+	`gho_[A-Za-z0-9_]{20,}|` + // GitHub OAuth Token
+	`AKIA[0-9A-Z]{16}|` + // AWS Access Key ID
+	`sk-[A-Za-z0-9_-]{20,}|` + // OpenAI / Generic API Secret Key
+	`-----BEGIN (?:[A-Z0-9_-]+ )?PRIVATE KEY-----` + // SSH / TLS private key
+`)`)
 
 //go:embed embed/demo.html
 var demoFS embed.FS
@@ -212,6 +222,11 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Defensively protect against oversized logs exceeding slot context window
+	if len(logText) > 12000 {
+		logText = logText[len(logText)-12000:]
+	}
+
 	userMsg := buildExtractUserPrompt(logText)
 
 	if os.Getenv("JEV_DEBUG") != "" {
@@ -308,6 +323,37 @@ func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}
+
+	// 1. Fast-path secret shield
+	if matched := reSecretTokens.FindString(logText); matched != "" {
+		masked := matched
+		if len(matched) > 12 {
+			masked = matched[:8] + "..."
+		}
+		finding := fmt.Sprintf("Detected plaintext secret token in log (%s)", masked)
+		s.emit(RequestEvent{
+			Task:       "Task C (Scan)",
+			SlotID:     schema.SlotScan,
+			LatencyMs:  0,
+			TTFTMs:     0,
+			TokPerSec:  0,
+			PromptToks: 0,
+			OutToks:    0,
+			Summary:    fmt.Sprintf("severity=Critical finding=%s [FAST-PATH]", truncate(finding, 40)),
+		})
+		writeJSON(w, 200, map[string]any{
+			"severity": "Critical",
+			"finding":  finding,
+			"action":   "halt_loop",
+			"metrics": map[string]any{
+				"latency_ms": 0.1,
+				"fast_path":  true,
+			},
+		})
+		return
+	}
+
+	// 2. Fall-through to LLM semantic scan (Slot 2)
 	t0 := time.Now()
 	severity, finding, metrics, err := s.Llama.ScanLog(logText)
 	if err != nil {
