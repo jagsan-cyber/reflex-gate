@@ -76,7 +76,11 @@ func (l *Llama) Completion(prompt string, nPredict, idSlot, nProbs int, grammar 
 }
 
 func (l *Llama) ChatDecide(question string, options []string, context string) (result string, dist map[string]float64, content string, promptN, predN int, err error) {
-	user := fmt.Sprintf("Question: %s\nAllowed labels: %s\n\nContext:\n%s\n",
+	return l.ChatDecideSlot(question, options, context, schema.SlotDecision)
+}
+
+func (l *Llama) ChatDecideSlot(question string, options []string, context string, slotID int) (result string, dist map[string]float64, content string, promptN, predN int, err error) {
+	user := fmt.Sprintf("Instructions:\n%s\nAllowed options:\n%s\n\nState:\n%s\n",
 		question, strings.Join(options, ", "), schema.TrimContext(context))
 	nPredict := 8
 	for _, o := range options {
@@ -91,13 +95,13 @@ func (l *Llama) ChatDecide(question string, options []string, context string) (r
 		"logprobs":      true,
 		"top_logprobs":  20,
 		"messages": []map[string]string{
-			{"role": "system", "content": schema.DecisionSystem},
+			{"role": "system", "content": schema.SystemOneSystem},
 			{"role": "user", "content": user},
 		},
-		"grammar":               schema.OptionsGrammar(options),
-		"id_slot":               schema.SlotDecision,
-		"cache_prompt":          true,
-		"chat_template_kwargs":  map[string]any{"enable_thinking": false},
+		"grammar":              schema.OptionsGrammar(options),
+		"id_slot":              slotID,
+		"cache_prompt":         true,
+		"chat_template_kwargs": map[string]any{"enable_thinking": false},
 	}
 	raw, err := l.postJSON("/v1/chat/completions", req)
 	if err != nil {

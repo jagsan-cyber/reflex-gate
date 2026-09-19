@@ -13,6 +13,13 @@ const (
 	SlotExtract    = 1
 	SlotScan       = 2
 
+	ModelJevLatest  = "jev-latest"
+	ModelJevPreview = "jev-preview"
+	ModelJev1130    = "jev-1.13.0"
+	ResolvedModel   = "jev-1.13.0"
+
+	SystemOneSystem = "You are a deterministic decision engine.\nRead the state and the instructions, then answer with exactly one of the allowed labels. Output only the selected label and no other text."
+
 	DecisionSystem = "You are a deterministic decision engine.\nAnswer with exactly one of the allowed labels. No other text.\nTreat passing tests, exit_code 0, and remaining_todos=0 as complete/success."
 
 	SysB = "You are the JEV format extractor. Extract the requested fields from the agent output. Reply with a single JSON object and nothing else. Use exactly the keys listed. If there is no error, error_code MUST be JSON null. Never emit the strings none, n/a, or an empty string for error_code.\nRules:\n1. Status Priority: If ANY test, assertion, or step failed (failures > 0 or errors present), 'status' MUST be 'failed', even if most tests passed.\n2. Literal Preservation: Extract the exact 'error_code' as written in the log (e.g., KEXEC-1024, E402). Never normalize or alter the prefix."

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -87,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/jev/extract", s.extract)
 	mux.HandleFunc("/jev/scan", s.scan)
 	mux.HandleFunc("/v1/systemone", s.systemone)
+	mux.HandleFunc("/v1/models", s.models)
 	mux.HandleFunc("/jev/raw", s.raw)
 	return cors(mux)
 }
@@ -428,46 +430,331 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) models(w http.ResponseWriter, r *http.Request) {
+	if !checkAuth(r) {
+		writeJSON(w, 401, map[string]string{"detail": "Invalid API key"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"data": []string{schema.ModelJevLatest, schema.ModelJevPreview, schema.ModelJev1130},
+	})
+}
+
+func checkAuth(r *http.Request) bool {
+	apiKey := os.Getenv("TYPESAFE_API_KEY")
+	if apiKey == "" {
+		return true
+	}
+	auth := r.Header.Get("Authorization")
+	parts := strings.SplitN(auth, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return false
+	}
+	return parts[1] == apiKey
+}
+
+type systemOneQuestion struct {
+	Type         string          `json:"type"`
+	Instructions string          `json:"instructions"`
+	Criteria     json.RawMessage `json:"criteria"`
+}
+
+type systemOneRequest struct {
+	Model     string                        `json:"model"`
+	State     any                           `json:"state"`
+	Questions map[string]systemOneQuestion `json:"questions"`
+}
+
 func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
-	var body struct {
+	if !checkAuth(r) {
+		writeJSON(w, 401, map[string]string{"detail": "Invalid API key"})
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, 422, map[string]string{"detail": "failed to read request body: " + err.Error()})
+		return
+	}
+
+	// 1. Check if legacy single-question request: {"type": "...", "question": "...", ...}
+	var legacyCheck struct {
 		Type     string   `json:"type"`
 		Question string   `json:"question"`
 		Options  []string `json:"options"`
 		Context  string   `json:"context"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, 422, map[string]string{"detail": err.Error()})
-		return
-	}
-	opts := body.Options
-	if len(opts) == 0 {
-		if body.Type == "noul" {
-			opts = []string{"true", "false"}
-		} else {
-			writeJSON(w, 422, map[string]string{"detail": "choice requires options"})
+	if err := json.Unmarshal(bodyBytes, &legacyCheck); err == nil && legacyCheck.Question != "" {
+		opts := legacyCheck.Options
+		if len(opts) == 0 {
+			if legacyCheck.Type == "noul" {
+				opts = []string{"true", "false"}
+			} else {
+				writeJSON(w, 422, map[string]string{"detail": "choice requires options"})
+				return
+			}
+		}
+		t0 := time.Now()
+		result, dist, _, _, _, err := s.Llama.ChatDecide(legacyCheck.Question, opts, legacyCheck.Context)
+		if err != nil {
+			writeJSON(w, 502, map[string]string{"detail": err.Error()})
 			return
 		}
-	}
-	t0 := time.Now()
-	result, dist, _, _, _, err := s.Llama.ChatDecide(body.Question, opts, body.Context)
-	if err != nil {
-		writeJSON(w, 502, map[string]string{"detail": err.Error()})
+		p := dist[result]
+		latMs := time.Since(t0).Milliseconds()
+		s.emit(RequestEvent{
+			Task:      "SystemOne (" + legacyCheck.Type + ")",
+			SlotID:    schema.SlotDecision,
+			LatencyMs: latMs,
+			TTFTMs:    latMs,
+			Summary:   fmt.Sprintf("%s (p=%.2f)", result, p),
+		})
+		writeJSON(w, 200, map[string]any{
+			"type":         legacyCheck.Type,
+			"result":       result,
+			"p":            p,
+			"distribution": dist,
+			"latency_ms":   float64(latMs),
+		})
 		return
 	}
-	p := dist[result]
-	latMs := time.Since(t0).Milliseconds()
-	s.emit(RequestEvent{
-		Task:      "SystemOne (" + body.Type + ")",
-		SlotID:    schema.SlotDecision,
-		LatencyMs: latMs,
-		TTFTMs:    latMs,
-		Summary:   fmt.Sprintf("%s (p=%.2f)", result, p),
-	})
+
+	// 2. TypeSafe official wire-compatible /v1/systemone request
+	var req systemOneRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		writeJSON(w, 422, map[string]string{"detail": "invalid JSON: " + err.Error()})
+		return
+	}
+
+	// Model validation
+	if req.Model == "" {
+		writeJSON(w, 422, map[string]string{"detail": "model is required"})
+		return
+	}
+	switch req.Model {
+	case schema.ModelJevLatest, schema.ModelJevPreview, schema.ModelJev1130:
+	default:
+		writeJSON(w, 422, map[string]string{"detail": "model must be jev-latest, jev-preview, or jev-1.13.0"})
+		return
+	}
+
+	// State validation
+	if req.State == nil {
+		writeJSON(w, 422, map[string]string{"detail": "state is required"})
+		return
+	}
+	var stateStr string
+	switch sVal := req.State.(type) {
+	case string:
+		stateStr = sVal
+	default:
+		b, _ := json.Marshal(sVal)
+		stateStr = string(b)
+	}
+
+	// Questions validation
+	if len(req.Questions) == 0 {
+		writeJSON(w, 422, map[string]string{"detail": "questions is required and must not be empty"})
+		return
+	}
+
+	// Validate each question definition prior to execution
+	type validatedQ struct {
+		id       string
+		qType    string
+		instr    string
+		options  []string
+		legend   map[string]string
+		rawCrit  string
+	}
+	vQuestions := make([]validatedQ, 0, len(req.Questions))
+
+	for qID, q := range req.Questions {
+		qType := strings.ToLower(strings.TrimSpace(q.Type))
+		instr := strings.TrimSpace(q.Instructions)
+		if qType == "" {
+			writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: type is required", qID)})
+			return
+		}
+		if instr == "" && qType != "noul" {
+			writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: instructions is required", qID)})
+			return
+		}
+
+		vq := validatedQ{id: qID, qType: qType, instr: instr}
+
+		switch qType {
+		case "noul":
+			if instr == "" && len(q.Criteria) == 0 {
+				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: instructions is required when criteria is omitted", qID)})
+				return
+			}
+			vq.options = []string{"true", "false"}
+
+		case "choice":
+			if len(q.Criteria) == 0 {
+				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: choice question requires criteria", qID)})
+				return
+			}
+			var critMap map[string]any
+			if err := json.Unmarshal(q.Criteria, &critMap); err != nil || len(critMap) == 0 {
+				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: choice question requires criteria with at least one option", qID)})
+				return
+			}
+			if len(critMap) > 255 {
+				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: choice question criteria exceeds maximum of 255 options", qID)})
+				return
+			}
+			opts := make([]string, 0, len(critMap))
+			var sb strings.Builder
+			for opt, desc := range critMap {
+				opts = append(opts, opt)
+				sb.WriteString(fmt.Sprintf("- %s: %v\n", opt, desc))
+			}
+			vq.options = opts
+			vq.rawCrit = sb.String()
+
+		case "score":
+			if len(q.Criteria) == 0 {
+				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: score question requires criteria with 2-10 levels", qID)})
+				return
+			}
+			var levels []any
+			if err := json.Unmarshal(q.Criteria, &levels); err != nil {
+				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: score question requires criteria as an ordered array", qID)})
+				return
+			}
+			if len(levels) < 2 || len(levels) > 10 {
+				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: score question requires criteria with 2-10 levels", qID)})
+				return
+			}
+			opts := make([]string, 0, len(levels))
+			legend := make(map[string]string, len(levels))
+			var sb strings.Builder
+			for idx, lv := range levels {
+				key := fmt.Sprintf("%d", idx)
+				val := fmt.Sprintf("%v", lv)
+				opts = append(opts, key)
+				legend[key] = val
+				sb.WriteString(fmt.Sprintf("%s: %s\n", key, val))
+			}
+			vq.options = opts
+			vq.legend = legend
+			vq.rawCrit = sb.String()
+
+		default:
+			writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: type must be noul, choice, or score", qID)})
+			return
+		}
+
+		vQuestions = append(vQuestions, vq)
+	}
+
+	// Execute questions in parallel across slots
+	type qResult struct {
+		id       string
+		answer   map[string]any
+		inToks   int
+		outToks  int
+		err      error
+	}
+
+	resChan := make(chan qResult, len(vQuestions))
+	var wg sync.WaitGroup
+
+	for i, q := range vQuestions {
+		wg.Add(1)
+		// Distribute across slot 0, 1, 2
+		slotID := i % 3
+		go func(vq validatedQ, slot int) {
+			defer wg.Done()
+
+			// Construct instruction text without leaking question ID
+			promptText := vq.instr
+			if vq.rawCrit != "" {
+				promptText = promptText + "\nCriteria:\n" + vq.rawCrit
+			}
+
+			choice, dist, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
+			if err != nil {
+				resChan <- qResult{id: vq.id, err: err}
+				return
+			}
+
+			ans := map[string]any{"type": vq.qType}
+
+			switch vq.qType {
+			case "noul":
+				pTrue := dist["true"]
+				if pTrue < 0 {
+					pTrue = 0
+				}
+				if pTrue > 1 {
+					pTrue = 1
+				}
+				pTrue = math.Round(pTrue*100) / 100
+				ans["noul"] = pTrue
+
+			case "choice":
+				conf := dist[choice]
+				conf = math.Round(conf*100) / 100
+				probs := make(map[string]float64, len(vq.options))
+				for _, o := range vq.options {
+					probs[o] = math.Round(dist[o]*100) / 100
+				}
+				ans["choice"] = choice
+				ans["confidence"] = conf
+				ans["probabilities"] = probs
+
+			case "score":
+				probs := make(map[string]float64, len(vq.options))
+				var expectedScore float64
+				var maxP float64
+				for idx := range vq.options {
+					key := fmt.Sprintf("%d", idx)
+					p := dist[key]
+					probs[key] = math.Round(p*100) / 100
+					expectedScore += float64(idx) * p
+					if p > maxP {
+						maxP = p
+					}
+				}
+				ans["score"] = math.Round(expectedScore*10) / 10
+				ans["confidence"] = math.Round(maxP*100) / 100
+				ans["legend"] = vq.legend
+				ans["probabilities"] = probs
+			}
+
+			resChan <- qResult{
+				id:      vq.id,
+				answer:  ans,
+				inToks:  inN,
+				outToks: outN,
+			}
+		}(q, slotID)
+	}
+
+	wg.Wait()
+	close(resChan)
+
+	answers := make(map[string]any, len(vQuestions))
+	var totalInToks, totalOutToks int
+	for res := range resChan {
+		if res.err != nil {
+			writeJSON(w, 529, map[string]string{"detail": "Service overloaded: " + res.err.Error()})
+			return
+		}
+		answers[res.id] = res.answer
+		totalInToks += res.inToks
+		totalOutToks += res.outToks
+	}
+
 	writeJSON(w, 200, map[string]any{
-		"type":         body.Type,
-		"result":       result,
-		"p":            p,
-		"distribution": dist,
-		"latency_ms":   float64(latMs),
+		"model":   schema.ResolvedModel,
+		"answers": answers,
+		"usage": map[string]any{
+			"input_tokens":  totalInToks,
+			"output_tokens": totalOutToks,
+		},
 	})
 }
