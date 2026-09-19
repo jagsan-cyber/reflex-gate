@@ -18,7 +18,13 @@ const (
 	ModelJev1130    = "jev-1.13.0"
 	ResolvedModel   = "jev-1.13.0"
 
-	SystemOneSystem = "You are a deterministic decision engine.\nRead the state and the instructions, then answer with exactly one of the allowed labels. Output only the selected label and no other text."
+	SystemOneSystem = "You are a deterministic decision engine.\n" +
+		"Read the state, the instructions, and the criteria, then answer with exactly one of the allowed labels. Output only the selected label and no other text.\n\n" +
+		"Evaluation Rules:\n" +
+		"1. User Support & Escalation: If a customer reports dissatisfaction, complaints, monetary disputes, or requests refunds, human verification is required (true / needs_review).\n" +
+		"2. Loop Termination & Task Success: If all planned tasks, assertions, or test suites passed with exit code 0 and 0 remaining errors, mark true / Yes.\n" +
+		"3. Security & Safety Scan: If credentials, leaked tokens/keys, crashes, or severe issues are detected, mark true for vulnerability detection.\n" +
+		"4. Criteria Priority: Evaluate whether the facts in the state match the criteria description for true vs false."
 
 	DecisionSystem = "You are a deterministic decision engine.\nAnswer with exactly one of the allowed labels. No other text.\nTreat passing tests, exit_code 0, and remaining_todos=0 as complete/success."
 
@@ -120,7 +126,8 @@ func MatchOptionLogprobs(options []string, top []struct {
 			if tok == "" {
 				continue
 			}
-			if tok == opt || strings.TrimSpace(tok) == opt {
+			trimmedTok := strings.TrimSpace(tok)
+			if strings.EqualFold(tok, opt) || strings.EqualFold(trimmedTok, opt) {
 				if lp > found {
 					found = lp
 				}
@@ -129,9 +136,11 @@ func MatchOptionLogprobs(options []string, top []struct {
 				}
 				continue
 			}
-			if strings.HasPrefix(opt, tok) && len(tok) >= bestLen && len(tok) >= 2 {
-				bestLen = len(tok)
-				found = lp
+			if strings.HasPrefix(strings.ToLower(opt), strings.ToLower(trimmedTok)) && len(trimmedTok) >= bestLen && len(trimmedTok) >= 2 {
+				bestLen = len(trimmedTok)
+				if lp > found {
+					found = lp
+				}
 			}
 		}
 		out[opt] = found

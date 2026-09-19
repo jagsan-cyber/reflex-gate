@@ -396,3 +396,76 @@ func TestSystemOneInputValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestSystemOneNoulExecution(t *testing.T) {
+	mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{"role": "assistant", "content": "true"},
+					"logprobs": map[string]any{
+						"content": []map[string]any{
+							{
+								"token": "true", "logprob": -0.15,
+								"top_logprobs": []map[string]any{
+									{"token": "true", "logprob": -0.15},
+									{"token": "false", "logprob": -2.0},
+								},
+							},
+						},
+					},
+				},
+			},
+			"usage": map[string]any{"prompt_tokens": 50, "completion_tokens": 1},
+		})
+	}))
+	defer mockLlama.Close()
+
+	s := NewServer(mockLlama.URL)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	payload := map[string]any{
+		"model": "jev-latest",
+		"state": "Customer requested full refund due to damaged item.",
+		"questions": map[string]any{
+			"needs_review": map[string]any{
+				"type":         "noul",
+				"instructions": "Is human review or refund required?",
+			},
+		},
+	}
+	b, _ := json.Marshal(payload)
+	resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("failed request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var res struct {
+		Model   string `json:"model"`
+		Answers map[string]struct {
+			Type string   `json:"type"`
+			Noul *float64 `json:"noul"`
+		} `json:"answers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+
+	ans, ok := res.Answers["needs_review"]
+	if !ok {
+		t.Fatalf("missing answer for needs_review")
+	}
+	if ans.Type != "noul" {
+		t.Errorf("expected type noul, got %s", ans.Type)
+	}
+	if ans.Noul == nil || *ans.Noul < 0.7 {
+		t.Errorf("expected noul >= 0.7, got %v", ans.Noul)
+	}
+}

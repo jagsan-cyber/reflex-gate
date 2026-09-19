@@ -634,7 +634,31 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: instructions is required when criteria is omitted", qID)})
 				return
 			}
+			trueDesc := "The condition or statement is true / YES"
+			falseDesc := "The condition or statement is false / NO"
+			if len(q.Criteria) > 0 {
+				var critMap map[string]any
+				if err := json.Unmarshal(q.Criteria, &critMap); err == nil && len(critMap) > 0 {
+					for k, v := range critMap {
+						lk := strings.ToLower(strings.TrimSpace(k))
+						if lk == "true" || lk == "yes" {
+							trueDesc = fmt.Sprintf("%v", v)
+						} else if lk == "false" || lk == "no" {
+							falseDesc = fmt.Sprintf("%v", v)
+						}
+					}
+				} else {
+					var s string
+					if err := json.Unmarshal(q.Criteria, &s); err == nil && strings.TrimSpace(s) != "" {
+						trueDesc = strings.TrimSpace(s)
+					}
+				}
+			}
 			vq.options = []string{"true", "false"}
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("- true: %s\n", trueDesc))
+			sb.WriteString(fmt.Sprintf("- false: %s\n", falseDesc))
+			vq.rawCrit = sb.String()
 
 		case "choice":
 			if len(q.Criteria) == 0 {
@@ -730,7 +754,23 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 
 			switch vq.qType {
 			case "noul":
-				pTrue := dist["true"]
+				pTrue, ok := dist["true"]
+				if !ok {
+					for k, v := range dist {
+						if strings.EqualFold(k, "true") {
+							pTrue = v
+							ok = true
+							break
+						}
+					}
+				}
+				if !ok {
+					if strings.EqualFold(choice, "true") {
+						pTrue = 1.0
+					} else {
+						pTrue = 0.0
+					}
+				}
 				if pTrue < 0 {
 					pTrue = 0
 				}
