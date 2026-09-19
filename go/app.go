@@ -422,18 +422,18 @@ func (a *App) StartServer(dto ConfigDTO) error {
 
 func (a *App) StopServer() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.apiRunning = false
+	a.starting = false
 
 	if a.api != nil {
 		_ = a.api.Stop()
 		a.api = nil
 	}
-	a.apiRunning = false
-	a.starting = false
 	a.isCPUFallback = false
 	a.activeBackend = ""
 	a.activeDevice = ""
 	a.runner.Stop()
+	a.mu.Unlock()
 
 	runtime.EventsEmit(a.ctx, "status-changed", ServerStatusDTO{
 		Running:  false,
@@ -526,10 +526,17 @@ func (a *App) CopyURL() error {
 }
 
 func (a *App) TriggerQuickTest(taskType string) (string, error) {
+	a.mu.Lock()
+	if !a.apiRunning {
+		a.mu.Unlock()
+		return "", fmt.Errorf("server is not running")
+	}
 	port := a.cfg.JevPort
 	if port <= 0 {
 		port = 8090
 	}
+	a.mu.Unlock()
+
 	var path, payload string
 	switch taskType {
 	case "stop":
@@ -546,7 +553,8 @@ func (a *App) TriggerQuickTest(taskType string) (string, error) {
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
-	resp, err := http.Post(url, "application/json", strings.NewReader(payload))
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(payload))
 	if err != nil {
 		return "", err
 	}

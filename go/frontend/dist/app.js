@@ -669,6 +669,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Stop Server
   elements.btnStopServer.addEventListener("click", async () => {
+    stopStress();
     if (window.go?.main?.App?.StopServer) {
       await window.go.main.App.StopServer();
     }
@@ -706,38 +707,59 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Continuous Stress Test Loop (Slot 0 & Slot 1 Dual Worker)
+  // Continuous Stress Test Loop (Slot 0 & Slot 1 Dual Worker with Async/Await)
   let stressRunning = false;
-  let stressTimers = [];
+  let activeWorkers = 0;
 
-  function runStressWorker(workerId) {
-    if (!stressRunning || !currentStatus.running) {
-      stopStress();
-      return;
+  async function runStressWorker(workerId) {
+    if (!stressRunning || !currentStatus?.running) return;
+    activeWorkers++;
+    try {
+      while (stressRunning && currentStatus && currentStatus.running) {
+        const tasks = ["stop", "extract", "scan"];
+        const task = tasks[Math.floor(Math.random() * tasks.length)];
+        if (window.go?.main?.App?.TriggerQuickTest) {
+          try {
+            await window.go.main.App.TriggerQuickTest(task);
+          } catch (e) {
+            if (!stressRunning || !currentStatus?.running) break;
+          }
+        }
+        if (!stressRunning || !currentStatus?.running) break;
+        // Pacing delay between sequential requests
+        await new Promise(r => setTimeout(r, 40));
+      }
+    } finally {
+      activeWorkers = Math.max(0, activeWorkers - 1);
+      if (activeWorkers === 0) {
+        finalizeStopStress();
+      }
     }
-    const tasks = ["stop", "extract", "scan"];
-    const task = tasks[Math.floor(Math.random() * tasks.length)];
-    if (window.go?.main?.App?.TriggerQuickTest) {
-      window.go.main.App.TriggerQuickTest(task).catch(() => {});
-    }
-    const timer = setTimeout(() => runStressWorker(workerId), 90);
-    stressTimers[workerId] = timer;
   }
 
   function startStress() {
-    if (!currentStatus.running) return;
+    if (!currentStatus || !currentStatus.running) return;
+    if (stressRunning) return;
     stressRunning = true;
-    elements.btnTestStress.classList.add("active");
-    elements.btnTestStress.textContent = currentLang === "en" ? "⏹ Stop Stress" : "⏹ 連打停止";
-    // Fire dual staggered workers for Slot 0 & Slot 1
+    if (elements.btnTestStress) {
+      elements.btnTestStress.classList.add("active");
+      elements.btnTestStress.textContent = currentLang === "en" ? "⏹ Stop Stress" : "⏹ 連打停止";
+    }
+    // Launch dual staggered workers for Slot 0 & Slot 1
     runStressWorker(0);
-    setTimeout(() => runStressWorker(1), 45);
+    setTimeout(() => {
+      if (stressRunning && currentStatus?.running) {
+        runStressWorker(1);
+      }
+    }, 45);
   }
 
   function stopStress() {
     stressRunning = false;
-    stressTimers.forEach(t => clearTimeout(t));
-    stressTimers = [];
+    finalizeStopStress();
+  }
+
+  function finalizeStopStress() {
     if (elements.btnTestStress) {
       elements.btnTestStress.classList.remove("active");
       const t = i18n[currentLang] || i18n.ja;
@@ -745,13 +767,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  elements.btnTestStress.addEventListener("click", () => {
-    if (!stressRunning) {
-      startStress();
-    } else {
-      stopStress();
-    }
-  });
+  if (elements.btnTestStress) {
+    elements.btnTestStress.addEventListener("click", () => {
+      if (!stressRunning) {
+        startStress();
+      } else {
+        stopStress();
+      }
+    });
+  }
 
   // Language Toggle
   elements.btnLangToggle.addEventListener("click", async () => {
