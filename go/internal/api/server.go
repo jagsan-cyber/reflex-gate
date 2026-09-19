@@ -33,10 +33,11 @@ type RequestEvent struct {
 }
 
 type Server struct {
-	Llama   *Llama
-	http    *http.Server
-	mu      sync.Mutex
-	OnEvent func(ev RequestEvent)
+	Llama    *Llama
+	Sessions *SessionManager
+	http     *http.Server
+	mu       sync.Mutex
+	OnEvent  func(ev RequestEvent)
 }
 
 func (s *Server) emit(ev RequestEvent) {
@@ -50,7 +51,10 @@ func (s *Server) emit(ev RequestEvent) {
 }
 
 func NewServer(llamaRoot string) *Server {
-	return &Server{Llama: NewLlama(llamaRoot)}
+	return &Server{
+		Llama:    NewLlama(llamaRoot),
+		Sessions: NewSessionManager(1),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -143,12 +147,33 @@ type errStr string
 
 func (e errStr) Error() string { return string(e) }
 
+type StopRequest struct {
+	Log       string `json:"log"`
+	SessionID string `json:"session_id"`
+}
+
+func readStopBody(r *http.Request) (StopRequest, error) {
+	b, err := io.ReadAll(r.Body)
+	if err != nil {
+		return StopRequest{}, err
+	}
+	var req StopRequest
+	if err := json.Unmarshal(b, &req); err != nil {
+		return StopRequest{}, err
+	}
+	if strings.TrimSpace(req.Log) == "" {
+		return StopRequest{}, errEmpty
+	}
+	return req, nil
+}
+
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	id, n, err := s.Llama.ModelsOK()
 	if err != nil {
 		writeJSON(w, 200, map[string]any{"ok": false, "llm_ok": false, "llm": s.Llama.Root, "n_slots": n, "error": err.Error()})
 		return
 	}
+	s.Sessions.SetNumSlots(n)
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "llm_ok": true, "llm": s.Llama.Root, "model": id, "n_slots": n,
 		"slots": map[string]int{"decision": schema.SlotDecision, "extract": schema.SlotExtract},
@@ -166,44 +191,44 @@ func (s *Server) schema(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
-	log, err := readLog(r)
+	req, err := readStopBody(r)
 	if err != nil {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}
-	t0 := time.Now()
-	result, _, _, pn, cn, err := s.Llama.ChatDecide(
-		"Has the agent task fully completed so the loop should stop?",
-		[]string{"Yes", "No"},
-		log,
-	)
+
+	slotID := s.Sessions.GetSlot(req.SessionID, schema.SlotDecision)
+	prompt := schema.FormatStopPrompt(req.Log)
+	isInc := s.Sessions.IsIncremental(req.SessionID, len(prompt))
+
+	result, metrics, err := s.Llama.DecideIncremental(prompt, slotID, []string{"Yes", "No"}, isInc)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"detail": err.Error()})
 		return
 	}
-	latencyMs := time.Since(t0).Milliseconds()
-	ttftMs := latencyMs
-	toks := 0.0
-	if cn > 0 && latencyMs > 0 {
-		toks = float64(cn) / (float64(latencyMs) / 1000.0)
-	}
+
+	s.Sessions.RecordTurn(req.SessionID, slotID, len(prompt))
+
+	latMs := asInt64(metrics["latency_ms"])
+	ttftMs := int64(asFloat(metrics["ttft_s"]) * 1000)
+	toks := asFloat(metrics["tok_s"])
+	pn := asInt(metrics["prompt_eval_count"])
+	cn := asInt(metrics["completion_tokens"])
+
 	s.emit(RequestEvent{
 		Task:       "Task A (Stop)",
-		SlotID:     0,
-		LatencyMs:  latencyMs,
+		SlotID:     slotID,
+		LatencyMs:  latMs,
 		TTFTMs:     ttftMs,
 		TokPerSec:  toks,
 		PromptToks: pn,
 		OutToks:    cn,
-		Summary:    fmt.Sprintf("stop=%v (%s)", strings.EqualFold(result, "Yes"), result),
+		Summary:    fmt.Sprintf("stop=%v (%s) [cached=%v, eval_n=%d]", strings.EqualFold(result, "Yes"), result, metrics["cached"], pn),
 	})
 	writeJSON(w, 200, map[string]any{
-		"stop": strings.EqualFold(result, "Yes"),
-		"raw":  result,
-		"metrics": map[string]any{
-			"ttft_s": time.Since(t0).Seconds(), "decode_s": 0.0, "total_s": time.Since(t0).Seconds(),
-			"prompt_tokens": pn, "completion_tokens": cn, "tok_s": 0.0,
-		},
+		"stop":    strings.EqualFold(result, "Yes"),
+		"raw":     result,
+		"metrics": metrics,
 	})
 }
 
@@ -361,10 +386,11 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Type     string   `json:"type"`
-		Question string   `json:"question"`
-		Options  []string `json:"options"`
-		Context  string   `json:"context"`
+		Type      string   `json:"type"`
+		Question  string   `json:"question"`
+		Options   []string `json:"options"`
+		Context   string   `json:"context"`
+		SessionID string   `json:"session_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
@@ -379,20 +405,32 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	slotID := s.Sessions.GetSlot(body.SessionID, schema.SlotDecision)
 	t0 := time.Now()
-	result, dist, _, _, _, err := s.Llama.ChatDecide(body.Question, opts, body.Context)
+	result, dist, _, pn, cn, err := s.Llama.ChatDecideWithSlot(body.Question, opts, body.Context, slotID)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"detail": err.Error()})
 		return
 	}
-	p := dist[result]
 	latMs := time.Since(t0).Milliseconds()
+	isInc := s.Sessions.IsIncremental(body.SessionID, len(body.Context))
+	s.Sessions.RecordTurn(body.SessionID, slotID, len(body.Context))
+
+	p := dist[result]
+	metrics := map[string]any{
+		"latency_ms":        latMs,
+		"prompt_eval_count": pn,
+		"prompt_eval_ms":    float64(latMs),
+		"cached":            isInc,
+		"completion_tokens": cn,
+	}
+
 	s.emit(RequestEvent{
 		Task:      "SystemOne (" + body.Type + ")",
-		SlotID:    0,
+		SlotID:    slotID,
 		LatencyMs: latMs,
 		TTFTMs:    latMs,
-		Summary:   fmt.Sprintf("%s (p=%.2f)", result, p),
+		Summary:   fmt.Sprintf("%s (p=%.2f) [cached=%v]", result, p, isInc),
 	})
 	writeJSON(w, 200, map[string]any{
 		"type":         body.Type,
@@ -400,5 +438,20 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 		"p":            p,
 		"distribution": dist,
 		"latency_ms":   float64(latMs),
+		"metrics":      metrics,
 	})
 }
+
+func asInt64(v any) int64 {
+	switch t := v.(type) {
+	case int64:
+		return t
+	case int:
+		return int64(t)
+	case float64:
+		return int64(t)
+	default:
+		return 0
+	}
+}
+

@@ -83,6 +83,9 @@ func (r *Runner) Start(llamaExe, model string, opt Options) error {
 		"--port", fmt.Sprintf("%d", opt.LlamaPort),
 		"--host", opt.Host,
 		"--jinja",
+		"--swa-full",
+		"-cms", "0",
+		"-sps", "0.05",
 	}
 
 	// Only enable Flash Attention and f16 cache if GPU offload is active

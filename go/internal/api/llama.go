@@ -75,7 +75,86 @@ func (l *Llama) Completion(prompt string, nPredict, idSlot, nProbs int, grammar 
 	return l.postJSON("/completion", req)
 }
 
+// DecideIncremental executes completion with cached prefix KV reuse
+func (l *Llama) DecideIncremental(prompt string, idSlot int, options []string, isIncrementalHint bool) (string, map[string]any, error) {
+	t0 := time.Now()
+	nPredict := 2
+	for _, o := range options {
+		if len(o) > nPredict {
+			nPredict = len(o)
+		}
+	}
+	grammar := schema.OptionsGrammar(options)
+	data, err := l.Completion(prompt, nPredict, idSlot, 0, grammar, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	wallS := time.Since(t0).Seconds()
+	latMs := time.Since(t0).Milliseconds()
+
+	content := strings.TrimSpace(jsonPathString(data, "content"))
+	result := content
+	for _, o := range options {
+		if strings.EqualFold(content, o) || strings.HasPrefix(strings.ToLower(content), strings.ToLower(o)) {
+			result = o
+			break
+		}
+	}
+
+	t, _ := data["timings"].(map[string]any)
+	if t == nil {
+		t = map[string]any{}
+	}
+	promptN := asInt(t["prompt_n"])
+	if promptN == 0 {
+		promptN = asInt(data["tokens_evaluated"])
+	}
+	promptMS := asFloat(t["prompt_ms"])
+	predN := asInt(t["predicted_n"])
+	if predN == 0 {
+		predN = asInt(data["tokens_predicted"])
+	}
+	predMS := asFloat(t["predicted_ms"])
+
+	tokensCached := asInt(t["cache_n"])
+	if tokensCached == 0 {
+		tokensCached = asInt(data["tokens_cached"])
+	}
+	cached := tokensCached > 0 || isIncrementalHint
+
+	ttftS := wallS
+	if promptMS > 0 {
+		ttftS = promptMS / 1000.0
+	}
+	decodeS := predMS / 1000.0
+	toks := 0.0
+	if decodeS > 0 && predN > 0 {
+		toks = float64(predN) / decodeS
+	}
+
+	metrics := map[string]any{
+		"latency_ms":        latMs,
+		"prompt_eval_count": promptN,
+		"prompt_eval_ms":    promptMS,
+		"cached":            cached,
+		"tokens_cached":     tokensCached,
+		"ttft_s":            ttftS,
+		"decode_s":          decodeS,
+		"total_s":           wallS,
+		"prompt_tokens":     promptN,
+		"completion_tokens": predN,
+		"tok_s":             toks,
+	}
+
+	return result, metrics, nil
+}
+
+
 func (l *Llama) ChatDecide(question string, options []string, context string) (result string, dist map[string]float64, content string, promptN, predN int, err error) {
+	return l.ChatDecideWithSlot(question, options, context, schema.SlotDecision)
+}
+
+func (l *Llama) ChatDecideWithSlot(question string, options []string, context string, idSlot int) (result string, dist map[string]float64, content string, promptN, predN int, err error) {
 	user := fmt.Sprintf("Question: %s\nAllowed labels: %s\n\nContext:\n%s\n",
 		question, strings.Join(options, ", "), schema.TrimContext(context))
 	nPredict := 8
@@ -95,7 +174,7 @@ func (l *Llama) ChatDecide(question string, options []string, context string) (r
 			{"role": "user", "content": user},
 		},
 		"grammar":               schema.OptionsGrammar(options),
-		"id_slot":               schema.SlotDecision,
+		"id_slot":               idSlot,
 		"cache_prompt":          true,
 		"chat_template_kwargs":  map[string]any{"enable_thinking": false},
 	}
