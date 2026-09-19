@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -46,6 +47,36 @@ func killTree(cmd *exec.Cmd) {
 		return
 	}
 	c := exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid))
+	c.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
+	_ = c.Run()
+}
+
+func KillProcessOnPort(port int) {
+	if port <= 0 {
+		return
+	}
+	out, err := exec.Command("powershell", "-NoProfile", "-Command",
+		strconv.Itoa(port)+` | ForEach-Object { (Get-NetTCPConnection -LocalPort $_ -State Listen -ErrorAction SilentlyContinue).OwningProcess }`).Output()
+	if err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			line = strings.TrimSpace(line)
+			if pid, err := strconv.Atoi(line); err == nil && pid > 0 {
+				c := exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid))
+				c.SysProcAttr = &syscall.SysProcAttr{
+					HideWindow:    true,
+					CreationFlags: 0x08000000,
+				}
+				_ = c.Run()
+			}
+		}
+	}
+}
+
+func KillAllLlama() {
+	c := exec.Command("taskkill", "/F", "/IM", "llama-server.exe")
 	c.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: 0x08000000,

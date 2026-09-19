@@ -32,6 +32,7 @@ Example (failure):
 
 // FormatStopPrompt builds an invariant prompt for differential prefill
 func FormatStopPrompt(logText string) string {
+	logText = strings.ReplaceAll(logText, "\r\n", "\n")
 	if strings.HasPrefix(logText, StopPrefixHeader) && strings.HasSuffix(logText, StopTailAnchor) {
 		return logText
 	}

@@ -433,6 +433,7 @@ func (a *App) StopServer() error {
 	a.activeBackend = ""
 	a.activeDevice = ""
 	a.runner.Stop()
+	proc.KillProcessOnPort(a.cfg.LlamaPort)
 	a.mu.Unlock()
 
 	runtime.EventsEmit(a.ctx, "status-changed", ServerStatusDTO{

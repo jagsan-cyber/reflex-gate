@@ -46,6 +46,7 @@ type Runner struct {
 	exited   bool
 	exitCode int
 	lastErr  string
+	lastPort int
 }
 
 type Options struct {
@@ -74,6 +75,10 @@ func (r *Runner) Start(llamaExe, model string, opt Options) error {
 	if opt.Host == "" {
 		opt.Host = "127.0.0.1"
 	}
+
+	// Terminate any stale process occupying the target port before launch
+	KillProcessOnPort(opt.LlamaPort)
+	r.lastPort = opt.LlamaPort
 
 	args := []string{
 		"-m", model,
@@ -142,20 +147,23 @@ func (r *Runner) Stop() {
 	r.mu.Lock()
 	cmd := r.cmd
 	r.cmd = nil
+	port := r.lastPort
 	r.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
-		return
+	if cmd != nil && cmd.Process != nil {
+		killTree(cmd)
+		done := make(chan struct{})
+		go func() {
+			_ = cmd.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			_ = cmd.Process.Kill()
+		}
 	}
-	killTree(cmd)
-	done := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		_ = cmd.Process.Kill()
+	if port > 0 {
+		KillProcessOnPort(port)
 	}
 }
 
