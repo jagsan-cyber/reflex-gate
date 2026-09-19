@@ -205,7 +205,8 @@ func (l *Llama) DecideNoulCoT(instructions, criteria, stateText string, slotID i
 	if criteria != "" {
 		userContent += "\n\n[Criteria]\n" + criteria
 	}
-	prompt := schema.ChatPrompt(schema.NoulCoTSystem, userContent)
+	systemPrompt := schema.GetNoulSystemPrompt(instructions)
+	prompt := schema.ChatPrompt(systemPrompt, userContent)
 
 	t0 := time.Now()
 	data, err := l.Completion(prompt, 80, slotID, 0, schema.NoulCoTGrammar, nil)

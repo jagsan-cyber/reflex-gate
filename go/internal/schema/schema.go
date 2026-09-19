@@ -299,3 +299,51 @@ func ParseNoulCoT(content string) (reason, decision string) {
 	}
 	return reason, strings.ToLower(decision)
 }
+
+// GetNoulSystemPrompt dynamically selects gatekeeper principles based on question intent
+func GetNoulSystemPrompt(instructions string) string {
+	instLower := strings.ToLower(instructions)
+
+	// 1. Loop termination & process halt check (Stop / Halt / Finish)
+	if strings.Contains(instLower, "stop") || strings.Contains(instLower, "halt") ||
+		strings.Contains(instLower, "terminate") || strings.Contains(instLower, "should the agent") {
+		return "You are a process execution gatekeeper.\n" +
+			"Determine if the execution loop MUST be permanently halted/stopped.\n" +
+			"State a 1-line reason, then output Decision: true or false.\n\n" +
+			"Rules:\n" +
+			"- Return 'true' ONLY on fatal errors, crashes (SIGSEGV/panic), confirmed test failures (>0 failed), or genuine final completion.\n" +
+			"- Return 'false' if:\n" +
+			"  * The process is idle, waiting, paused, or awaiting user/human confirmation/input (normal workflow, do NOT stop).\n" +
+			"  * No tests ran, 0 items collected, or pending execution (incomplete, do NOT stop even if exit code is 0)."
+	}
+
+	// 2. Human escalation & customer support triage (Human Review)
+	if strings.Contains(instLower, "human") || strings.Contains(instLower, "support") ||
+		strings.Contains(instLower, "agent") || strings.Contains(instLower, "ticket") ||
+		strings.Contains(instLower, "escalat") {
+		return "You are a customer support escalation triage gatekeeper.\n" +
+			"Determine if the state requires human agent review or escalation.\n" +
+			"State a 1-line reason, then output Decision: true or false.\n\n" +
+			"Rules:\n" +
+			"- Return 'true' if the customer reports billing errors, double charges, monetary loss, explicit dissatisfaction, or unresolved complaints.\n" +
+			"- Return 'false' for resolved issues, standard informational inquiries, or automated positive confirmations."
+	}
+
+	// 3. Security & vulnerability check
+	if strings.Contains(instLower, "secret") || strings.Contains(instLower, "token") ||
+		strings.Contains(instLower, "key") || strings.Contains(instLower, "leak") ||
+		strings.Contains(instLower, "vulnerab") || strings.Contains(instLower, "credential") ||
+		strings.Contains(instLower, "security") {
+		return "You are an automated security and safety triage gatekeeper.\n" +
+			"Determine if there is an active security vulnerability, exposed credential, or destructive command.\n" +
+			"State a 1-line reason, then output Decision: true or false.\n\n" +
+			"Rules:\n" +
+			"- Return 'true' if any raw API key, secret token, password, private key, injection attack, or memory crash is exposed.\n" +
+			"- Return 'false' if the state is clean, normal, or contains only public/masked text."
+	}
+
+	// 4. General binary question (default)
+	return "You are an expert decision gatekeeper.\n" +
+		"Analyze the state and answer the specific question accurately.\n" +
+		"State a concise 1-line reason, then output Decision: true or false."
+}

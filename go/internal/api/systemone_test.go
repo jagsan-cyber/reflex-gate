@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"local-jev/internal/schema"
@@ -595,5 +596,40 @@ func TestCalibrateNoulTemperature(t *testing.T) {
 	pMissingTrue := schema.CalibrateNoul(schema.MissingLogprob, -0.3, 0.20)
 	if pMissingTrue != 0.0 {
 		t.Errorf("expected 0.0 when true is missing, got %f", pMissingTrue)
+	}
+}
+
+func TestGetNoulSystemPrompt(t *testing.T) {
+	// 1. Loop termination / Stop
+	p1 := schema.GetNoulSystemPrompt("Should the loop stop now?")
+	if !strings.Contains(p1, "process execution gatekeeper") {
+		t.Errorf("expected process execution gatekeeper for stop question, got %q", p1)
+	}
+	if !strings.Contains(p1, "0 items collected") {
+		t.Errorf("expected A-N1 rule (0 items collected) in stop prompt")
+	}
+	if !strings.Contains(p1, "awaiting user/human confirmation") {
+		t.Errorf("expected A-N3 rule (awaiting confirmation) in stop prompt")
+	}
+
+	// 2. Human escalation / Support
+	p2 := schema.GetNoulSystemPrompt("Does this ticket require human review?")
+	if !strings.Contains(p2, "customer support escalation triage") {
+		t.Errorf("expected customer support escalation triage for human review, got %q", p2)
+	}
+	if !strings.Contains(p2, "billing errors") {
+		t.Errorf("expected JA-1 rule (billing errors) in human review prompt")
+	}
+
+	// 3. Security
+	p3 := schema.GetNoulSystemPrompt("Is there a leaked secret token or credential?")
+	if !strings.Contains(p3, "security and safety triage gatekeeper") {
+		t.Errorf("expected security triage gatekeeper for secret token question, got %q", p3)
+	}
+
+	// 4. Default general
+	p4 := schema.GetNoulSystemPrompt("Is this condition satisfied?")
+	if !strings.Contains(p4, "expert decision gatekeeper") {
+		t.Errorf("expected expert decision gatekeeper for generic question, got %q", p4)
 	}
 }
