@@ -646,31 +646,30 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, 422, map[string]string{"detail": fmt.Sprintf("question %q: instructions is required when criteria is omitted", qID)})
 				return
 			}
-			vq.options = []string{"true", "false"}
+			opts := []string{"yes", "no"}
+			var sb strings.Builder
 			if len(q.Criteria) > 0 {
-				trueDesc := "The condition or statement is true / YES"
-				falseDesc := "The condition or statement is false / NO"
 				var critMap map[string]any
 				if err := json.Unmarshal(q.Criteria, &critMap); err == nil && len(critMap) > 0 {
+					customOpts := make([]string, 0, len(critMap))
 					for k, v := range critMap {
-						lk := strings.ToLower(strings.TrimSpace(k))
-						if lk == "true" || lk == "yes" {
-							trueDesc = fmt.Sprintf("%v", v)
-						} else if lk == "false" || lk == "no" {
-							falseDesc = fmt.Sprintf("%v", v)
-						}
+						customOpts = append(customOpts, k)
+						sb.WriteString(fmt.Sprintf("- %s: %v\n", k, v))
 					}
+					opts = customOpts
 				} else {
 					var s string
 					if err := json.Unmarshal(q.Criteria, &s); err == nil && strings.TrimSpace(s) != "" {
-						trueDesc = strings.TrimSpace(s)
+						sb.WriteString(fmt.Sprintf("- yes: %s\n", strings.TrimSpace(s)))
+						sb.WriteString("- no: Condition is not met / No / False\n")
 					}
 				}
-				var sb strings.Builder
-				sb.WriteString(fmt.Sprintf("- true: %s\n", trueDesc))
-				sb.WriteString(fmt.Sprintf("- false: %s\n", falseDesc))
-				vq.rawCrit = sb.String()
+			} else {
+				sb.WriteString("- yes: Condition is met / Yes / True\n")
+				sb.WriteString("- no: Condition is not met / No / False\n")
 			}
+			vq.options = opts
+			vq.rawCrit = sb.String()
 
 		case "choice":
 			if len(q.Criteria) == 0 {
@@ -751,7 +750,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			t0 := time.Now()
 
-			// 1. Handle noul questions
+			// 1. Fast-path secret shield for noul questions
 			if vq.qType == "noul" {
 				lowerInstr := strings.ToLower(vq.instr)
 				isSecretQuery := strings.Contains(lowerInstr, "secret") ||
@@ -787,46 +786,9 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 					}
 					return
 				}
-
-				decision, reason, inN, outN, latMs, err := s.Llama.DecideNoulCoT(vq.instr, vq.rawCrit, stateStr, slot)
-				if err != nil {
-					resChan <- qResult{id: vq.id, err: err}
-					return
-				}
-
-				noulVal := 0.05
-				if strings.EqualFold(decision, "true") || strings.EqualFold(decision, "yes") {
-					noulVal = 0.95
-				}
-
-				tokPerSec := 0.0
-				if latMs > 0 && outN > 0 {
-					tokPerSec = float64(outN) / (float64(latMs) / 1000.0)
-				}
-				s.emit(RequestEvent{
-					Task:       "SystemOne (noul)",
-					SlotID:     slot,
-					LatencyMs:  latMs,
-					TTFTMs:     latMs,
-					TokPerSec:  tokPerSec,
-					PromptToks: inN,
-					OutToks:    outN,
-					Summary:    fmt.Sprintf("%s: noul=%.2f reason=%s", vq.id, noulVal, truncate(reason, 40)),
-				})
-
-				resChan <- qResult{
-					id: vq.id,
-					answer: map[string]any{
-						"type": "noul",
-						"noul": noulVal,
-					},
-					inToks:  inN,
-					outToks: outN,
-				}
-				return
 			}
 
-			// 2. Handle choice and score questions
+			// 2. Execute via proven choice pipeline for all questions
 			promptText := vq.instr
 			if vq.rawCrit != "" {
 				promptText = promptText + "\nCriteria:\n" + vq.rawCrit
@@ -841,6 +803,40 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			ans := map[string]any{"type": vq.qType}
 
 			switch vq.qType {
+			case "noul":
+				pPositive := 0.0
+				if p, ok := dist["yes"]; ok {
+					pPositive = p
+				} else if p, ok := dist["true"]; ok {
+					pPositive = p
+				} else if p, ok := dist["Yes"]; ok {
+					pPositive = p
+				} else if p, ok := dist["True"]; ok {
+					pPositive = p
+				} else {
+					for k, v := range dist {
+						lk := strings.ToLower(strings.TrimSpace(k))
+						if lk == "yes" || lk == "true" {
+							pPositive = v
+							break
+						}
+					}
+				}
+				if pPositive == 0.0 && (strings.EqualFold(choice, "yes") || strings.EqualFold(choice, "true")) {
+					if cP, ok := dist[choice]; ok && cP > 0 {
+						pPositive = cP
+					} else {
+						pPositive = 0.95
+					}
+				}
+				if pPositive < 0 {
+					pPositive = 0
+				}
+				if pPositive > 1 {
+					pPositive = 1
+				}
+				ans["noul"] = math.Round(pPositive*100) / 100
+
 			case "choice":
 				conf := dist[choice]
 				conf = math.Round(conf*100) / 100
@@ -874,6 +870,8 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			latMs := time.Since(t0).Milliseconds()
 			var summaryStr string
 			switch vq.qType {
+			case "noul":
+				summaryStr = fmt.Sprintf("noul=%.2f (choice=%s)", ans["noul"], choice)
 			case "choice":
 				summaryStr = fmt.Sprintf("choice=%v (%.2f)", ans["choice"], ans["confidence"])
 			case "score":

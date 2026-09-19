@@ -417,14 +417,14 @@ func TestSystemOneNoulExecution(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{
-					"message": map[string]any{"role": "assistant", "content": "true"},
+					"message": map[string]any{"role": "assistant", "content": "yes"},
 					"logprobs": map[string]any{
 						"content": []map[string]any{
 							{
-								"token": "true", "logprob": -0.15,
+								"token": "yes", "logprob": -0.15,
 								"top_logprobs": []map[string]any{
-									{"token": "true", "logprob": -0.15},
-									{"token": "false", "logprob": -2.0},
+									{"token": "yes", "logprob": -0.15},
+									{"token": "no", "logprob": -2.0},
 								},
 							},
 						},
@@ -631,5 +631,78 @@ func TestGetNoulSystemPrompt(t *testing.T) {
 	p4 := schema.GetNoulSystemPrompt("Is this condition satisfied?")
 	if !strings.Contains(p4, "expert decision gatekeeper") {
 		t.Errorf("expected expert decision gatekeeper for generic question, got %q", p4)
+	}
+}
+
+func TestSystemOneNoulViaChoice(t *testing.T) {
+	mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{"role": "assistant", "content": "no"},
+					"logprobs": map[string]any{
+						"content": []map[string]any{
+							{
+								"token": "no", "logprob": -0.27,
+								"top_logprobs": []map[string]any{
+									{"token": "no", "logprob": -0.27},
+									{"token": "yes", "logprob": -1.45},
+								},
+							},
+						},
+					},
+				},
+			},
+			"usage": map[string]any{"prompt_tokens": 50, "completion_tokens": 1},
+		})
+	}))
+	defer mockLlama.Close()
+
+	s := NewServer(mockLlama.URL)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	payload := map[string]any{
+		"model": "jev-latest",
+		"state": "0 tests collected. Process finished with exit code 0.",
+		"questions": map[string]any{
+			"should_stop": map[string]any{
+				"type":         "noul",
+				"instructions": "Should the execution stop now?",
+			},
+		},
+	}
+	b, _ := json.Marshal(payload)
+	resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("failed request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var res struct {
+		Model   string `json:"model"`
+		Answers map[string]struct {
+			Type string   `json:"type"`
+			Noul *float64 `json:"noul"`
+		} `json:"answers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+
+	ans, ok := res.Answers["should_stop"]
+	if !ok {
+		t.Fatalf("missing answer for should_stop")
+	}
+	if ans.Type != "noul" {
+		t.Errorf("expected type noul, got %s", ans.Type)
+	}
+	if ans.Noul == nil || *ans.Noul > 0.35 {
+		t.Errorf("expected healthy low noul <= 0.35, got %v", ans.Noul)
 	}
 }
