@@ -3,10 +3,13 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"local-jev/internal/schema"
 )
 
 func TestModelsEndpoint(t *testing.T) {
@@ -467,5 +470,37 @@ func TestSystemOneNoulExecution(t *testing.T) {
 	}
 	if ans.Noul == nil || *ans.Noul < 0.7 {
 		t.Errorf("expected noul >= 0.7, got %v", ans.Noul)
+	}
+}
+
+func TestCalibrateNoulTemperature(t *testing.T) {
+	// 1. Equal logits -> 0.50
+	pEqual := schema.CalibrateNoul(-0.5, -0.5, 0.20)
+	if math.Abs(pEqual-0.50) > 1e-4 {
+		t.Errorf("expected 0.50 for equal logits, got %f", pEqual)
+	}
+
+	// 2. Small positive delta (+0.2) with T=0.20 -> p > 0.70 (1 / (1 + exp(-1)) ~= 0.731)
+	pHigh := schema.CalibrateNoul(-0.4, -0.6, 0.20)
+	if pHigh < 0.70 {
+		t.Errorf("expected p > 0.70 for delta=0.2, got %f", pHigh)
+	}
+
+	// 3. Small negative delta (-0.2) with T=0.20 -> p < 0.30
+	pLow := schema.CalibrateNoul(-0.6, -0.4, 0.20)
+	if pLow > 0.30 {
+		t.Errorf("expected p < 0.30 for delta=-0.2, got %f", pLow)
+	}
+
+	// 4. Missing false token -> 1.0
+	pMissingFalse := schema.CalibrateNoul(-0.3, schema.MissingLogprob, 0.20)
+	if pMissingFalse != 1.0 {
+		t.Errorf("expected 1.0 when false is missing, got %f", pMissingFalse)
+	}
+
+	// 5. Missing true token -> 0.0
+	pMissingTrue := schema.CalibrateNoul(schema.MissingLogprob, -0.3, 0.20)
+	if pMissingTrue != 0.0 {
+		t.Errorf("expected 0.0 when true is missing, got %f", pMissingTrue)
 	}
 }

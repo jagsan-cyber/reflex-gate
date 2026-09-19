@@ -540,10 +540,22 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		t0 := time.Now()
-		result, dist, _, _, _, err := s.Llama.ChatDecide(legacyCheck.Question, opts, legacyCheck.Context)
+		result, dist, logps, _, _, _, err := s.Llama.ChatDecide(legacyCheck.Question, opts, legacyCheck.Context)
 		if err != nil {
 			writeJSON(w, 502, map[string]string{"detail": err.Error()})
 			return
+		}
+		if legacyCheck.Type == "noul" {
+			temp := schema.GetNoulTemperature()
+			zTrue := schema.FindLogprob(logps, "true", "yes")
+			zFalse := schema.FindLogprob(logps, "false", "no")
+			pTrue := schema.CalibrateNoul(zTrue, zFalse, temp)
+			dist["true"] = math.Round(pTrue*100) / 100
+			dist["false"] = math.Round((1.0-pTrue)*100) / 100
+			if _, ok := dist["Yes"]; ok {
+				dist["Yes"] = dist["true"]
+				dist["No"] = dist["false"]
+			}
 		}
 		p := dist[result]
 		latMs := time.Since(t0).Milliseconds()
@@ -744,7 +756,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				promptText = promptText + "\nCriteria:\n" + vq.rawCrit
 			}
 
-			choice, dist, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
+			choice, dist, logps, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
 			if err != nil {
 				resChan <- qResult{id: vq.id, err: err}
 				return
@@ -754,21 +766,15 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 
 			switch vq.qType {
 			case "noul":
-				pTrue, ok := dist["true"]
-				if !ok {
-					for k, v := range dist {
-						if strings.EqualFold(k, "true") {
-							pTrue = v
-							ok = true
-							break
-						}
-					}
-				}
-				if !ok {
-					if strings.EqualFold(choice, "true") {
-						pTrue = 1.0
+				temp := schema.GetNoulTemperature()
+				zTrue := schema.FindLogprob(logps, "true", "yes")
+				zFalse := schema.FindLogprob(logps, "false", "no")
+				pTrue := schema.CalibrateNoul(zTrue, zFalse, temp)
+				if zTrue <= schema.MissingLogprob+1.0 && zFalse <= schema.MissingLogprob+1.0 {
+					if strings.EqualFold(choice, "true") || strings.EqualFold(choice, "yes") {
+						pTrue = 0.95
 					} else {
-						pTrue = 0.0
+						pTrue = 0.05
 					}
 				}
 				if pTrue < 0 {

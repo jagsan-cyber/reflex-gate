@@ -88,11 +88,11 @@ func (l *Llama) Completion(prompt string, nPredict, idSlot, nProbs int, grammar 
 	return l.postJSON("/completion", req)
 }
 
-func (l *Llama) ChatDecide(question string, options []string, context string) (result string, dist map[string]float64, content string, promptN, predN int, err error) {
+func (l *Llama) ChatDecide(question string, options []string, context string) (result string, dist map[string]float64, logps map[string]float64, content string, promptN, predN int, err error) {
 	return l.ChatDecideSlot(question, options, context, schema.SlotDecision)
 }
 
-func (l *Llama) ChatDecideSlot(question string, options []string, context string, slotID int) (result string, dist map[string]float64, content string, promptN, predN int, err error) {
+func (l *Llama) ChatDecideSlot(question string, options []string, context string, slotID int) (result string, dist map[string]float64, logps map[string]float64, content string, promptN, predN int, err error) {
 	user := fmt.Sprintf("Instructions:\n%s\nAllowed options:\n%s\n\nState:\n%s\n",
 		question, strings.Join(options, ", "), schema.TrimContext(context))
 	nPredict := 8
@@ -118,7 +118,7 @@ func (l *Llama) ChatDecideSlot(question string, options []string, context string
 	}
 	raw, err := l.postJSON("/v1/chat/completions", req)
 	if err != nil {
-		return "", nil, "", 0, 0, err
+		return "", nil, nil, "", 0, 0, err
 	}
 	content = strings.TrimSpace(jsonPathString(raw, "choices", 0, "message", "content"))
 	var top []struct {
@@ -153,7 +153,7 @@ func (l *Llama) ChatDecideSlot(question string, options []string, context string
 			}
 		}
 	}
-	logps := schema.MatchOptionLogprobs(options, top)
+	logps = schema.MatchOptionLogprobs(options, top)
 	dist = schema.Softmax(logps)
 	result = content
 	matched := false
@@ -177,7 +177,7 @@ func (l *Llama) ChatDecideSlot(question string, options []string, context string
 		promptN = asInt(u["prompt_tokens"])
 		predN = asInt(u["completion_tokens"])
 	}
-	return result, dist, content, promptN, predN, nil
+	return result, dist, logps, content, promptN, predN, nil
 }
 
 // DecideCoT uses 1-line Chain-of-Thought reasoning with GBNF grammar

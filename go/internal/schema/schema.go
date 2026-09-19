@@ -3,6 +3,8 @@ package schema
 import (
 	"encoding/json"
 	"math"
+	"os"
+	"strconv"
 	"strings"
 )
 
@@ -94,6 +96,56 @@ func Softmax(logps map[string]float64) map[string]float64 {
 		out[k] = e / z
 	}
 	return out
+}
+
+// GetNoulTemperature returns temperature T for logit scaling (default 0.20, range 0.15 - 0.25).
+func GetNoulTemperature() float64 {
+	envT := os.Getenv("JEV_NOUL_TEMP")
+	if envT != "" {
+		if t, err := strconv.ParseFloat(strings.TrimSpace(envT), 64); err == nil && t > 0 {
+			return t
+		}
+	}
+	return 0.20
+}
+
+// CalibrateNoul computes temperature-scaled sigmoid probability for true vs false:
+// P(true) = 1 / (1 + exp(- (z_true - z_false) / T))
+func CalibrateNoul(zTrue, zFalse, temp float64) float64 {
+	if temp <= 0 {
+		temp = 0.20
+	}
+	if zTrue <= MissingLogprob+1.0 && zFalse <= MissingLogprob+1.0 {
+		return 0.50
+	}
+	if zTrue <= MissingLogprob+1.0 {
+		return 0.0
+	}
+	if zFalse <= MissingLogprob+1.0 {
+		return 1.0
+	}
+
+	deltaZ := zTrue - zFalse
+	scaled := deltaZ / temp
+	if scaled > 40.0 {
+		return 1.0
+	}
+	if scaled < -40.0 {
+		return 0.0
+	}
+	return 1.0 / (1.0 + math.Exp(-scaled))
+}
+
+// FindLogprob searches for candidate keys case-insensitively in logps.
+func FindLogprob(logps map[string]float64, keys ...string) float64 {
+	for _, k := range keys {
+		for lk, v := range logps {
+			if strings.EqualFold(lk, k) && v > MissingLogprob+1.0 {
+				return v
+			}
+		}
+	}
+	return MissingLogprob
 }
 
 func MatchOptionLogprobs(options []string, top []struct {
