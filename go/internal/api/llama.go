@@ -199,6 +199,42 @@ func (l *Llama) DecideCoT(logText string) (verdict, reason string, metrics map[s
 	return verdict, reason, metrics, nil
 }
 
+// DecideNoulCoT evaluates noul queries using 1-line CoT reasoning with GBNF grammar
+func (l *Llama) DecideNoulCoT(instructions, criteria, stateText string, slotID int) (decision, reason string, promptN, predN int, latMs int64, err error) {
+	userContent := "[State]\n" + schema.TrimContext(stateText) + "\n\n[Question]\n" + instructions
+	if criteria != "" {
+		userContent += "\n\n[Criteria]\n" + criteria
+	}
+	prompt := schema.ChatPrompt(schema.NoulCoTSystem, userContent)
+
+	t0 := time.Now()
+	data, err := l.Completion(prompt, 80, slotID, 0, schema.NoulCoTGrammar, nil)
+	if err != nil {
+		return "", "", 0, 0, 0, err
+	}
+	latMs = time.Since(t0).Milliseconds()
+
+	content, _ := data["content"].(string)
+	reason, decision = schema.ParseNoulCoT(content)
+
+	if t, ok := data["timings"].(map[string]any); ok {
+		promptN = asInt(t["prompt_n"])
+		predN = asInt(t["predicted_n"])
+	}
+	if predN == 0 {
+		predN = asInt(data["tokens_predicted"])
+	}
+	if u, ok := data["usage"].(map[string]any); ok {
+		if promptN == 0 {
+			promptN = asInt(u["prompt_tokens"])
+		}
+		if predN == 0 {
+			predN = asInt(u["completion_tokens"])
+		}
+	}
+	return decision, reason, promptN, predN, latMs, nil
+}
+
 // ScanLog performs semantic security/runtime scanning with GBNF grammar
 func (l *Llama) ScanLog(logText string) (severity, finding string, metrics map[string]any, err error) {
 	userContent := "[Log to scan]\n" + schema.TrimContext(logText)

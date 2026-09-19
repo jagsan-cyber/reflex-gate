@@ -749,14 +749,90 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 		slotID := i % 3
 		go func(vq validatedQ, slot int) {
 			defer wg.Done()
+			t0 := time.Now()
 
-			// Construct instruction text without leaking question ID
+			// 1. Handle noul questions
+			if vq.qType == "noul" {
+				lowerInstr := strings.ToLower(vq.instr)
+				isSecretQuery := strings.Contains(lowerInstr, "secret") ||
+					strings.Contains(lowerInstr, "token") ||
+					strings.Contains(lowerInstr, "key") ||
+					strings.Contains(lowerInstr, "leak") ||
+					strings.Contains(lowerInstr, "credential")
+
+				if isSecretQuery && reSecretTokens.MatchString(stateStr) {
+					matched := reSecretTokens.FindString(stateStr)
+					masked := matched
+					if len(matched) > 8 {
+						masked = matched[:8] + "..."
+					}
+					s.emit(RequestEvent{
+						Task:       "SystemOne (noul)",
+						SlotID:     slot,
+						LatencyMs:  0,
+						TTFTMs:     0,
+						TokPerSec:  0,
+						PromptToks: 0,
+						OutToks:    0,
+						Summary:    fmt.Sprintf("%s: noul=0.99 (secret shield: %s) [FAST-PATH]", vq.id, masked),
+					})
+					resChan <- qResult{
+						id: vq.id,
+						answer: map[string]any{
+							"type": "noul",
+							"noul": 0.99,
+						},
+						inToks:  0,
+						outToks: 0,
+					}
+					return
+				}
+
+				decision, reason, inN, outN, latMs, err := s.Llama.DecideNoulCoT(vq.instr, vq.rawCrit, stateStr, slot)
+				if err != nil {
+					resChan <- qResult{id: vq.id, err: err}
+					return
+				}
+
+				noulVal := 0.05
+				if strings.EqualFold(decision, "true") || strings.EqualFold(decision, "yes") {
+					noulVal = 0.95
+				}
+
+				tokPerSec := 0.0
+				if latMs > 0 && outN > 0 {
+					tokPerSec = float64(outN) / (float64(latMs) / 1000.0)
+				}
+				s.emit(RequestEvent{
+					Task:       "SystemOne (noul)",
+					SlotID:     slot,
+					LatencyMs:  latMs,
+					TTFTMs:     latMs,
+					TokPerSec:  tokPerSec,
+					PromptToks: inN,
+					OutToks:    outN,
+					Summary:    fmt.Sprintf("%s: noul=%.2f reason=%s", vq.id, noulVal, truncate(reason, 40)),
+				})
+
+				resChan <- qResult{
+					id: vq.id,
+					answer: map[string]any{
+						"type": "noul",
+						"noul": noulVal,
+					},
+					inToks:  inN,
+					outToks: outN,
+				}
+				return
+			}
+
+			// 2. Handle choice and score questions
 			promptText := vq.instr
 			if vq.rawCrit != "" {
 				promptText = promptText + "\nCriteria:\n" + vq.rawCrit
 			}
 
-			choice, dist, logps, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
+			choice, dist, _, _, inN, outN, err := s.Llama.ChatDecideSlot(promptText, vq.options, stateStr, slot)
 			if err != nil {
 				resChan <- qResult{id: vq.id, err: err}
 				return
@@ -765,27 +841,6 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			ans := map[string]any{"type": vq.qType}
 
 			switch vq.qType {
-			case "noul":
-				temp := schema.GetNoulTemperature()
-				zTrue := schema.FindLogprob(logps, "true", "yes")
-				zFalse := schema.FindLogprob(logps, "false", "no")
-				pTrue := schema.CalibrateNoul(zTrue, zFalse, temp)
-				if zTrue <= schema.MissingLogprob+1.0 && zFalse <= schema.MissingLogprob+1.0 {
-					if strings.EqualFold(choice, "true") || strings.EqualFold(choice, "yes") {
-						pTrue = 0.95
-					} else {
-						pTrue = 0.05
-					}
-				}
-				if pTrue < 0 {
-					pTrue = 0
-				}
-				if pTrue > 1 {
-					pTrue = 1
-				}
-				pTrue = math.Round(pTrue*100) / 100
-				ans["noul"] = pTrue
-
 			case "choice":
 				conf := dist[choice]
 				conf = math.Round(conf*100) / 100
@@ -815,6 +870,29 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				ans["legend"] = vq.legend
 				ans["probabilities"] = probs
 			}
+
+			latMs := time.Since(t0).Milliseconds()
+			var summaryStr string
+			switch vq.qType {
+			case "choice":
+				summaryStr = fmt.Sprintf("choice=%v (%.2f)", ans["choice"], ans["confidence"])
+			case "score":
+				summaryStr = fmt.Sprintf("score=%.1f", ans["score"])
+			}
+			tokPerSec := 0.0
+			if latMs > 0 && outN > 0 {
+				tokPerSec = float64(outN) / (float64(latMs) / 1000.0)
+			}
+			s.emit(RequestEvent{
+				Task:       "SystemOne (" + vq.qType + ")",
+				SlotID:     slot,
+				LatencyMs:  latMs,
+				TTFTMs:     latMs,
+				TokPerSec:  tokPerSec,
+				PromptToks: inN,
+				OutToks:    outN,
+				Summary:    fmt.Sprintf("%s: %s", vq.id, summaryStr),
+			})
 
 			resChan <- qResult{
 				id:      vq.id,

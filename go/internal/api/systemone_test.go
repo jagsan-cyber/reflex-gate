@@ -403,6 +403,16 @@ func TestSystemOneInputValidation(t *testing.T) {
 func TestSystemOneNoulExecution(t *testing.T) {
 	mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/completion" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"content": "Reason: Customer requested refund due to damaged item.\nDecision: true",
+				"timings": map[string]any{
+					"prompt_n":    50,
+					"predicted_n": 10,
+				},
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{
@@ -470,6 +480,89 @@ func TestSystemOneNoulExecution(t *testing.T) {
 	}
 	if ans.Noul == nil || *ans.Noul < 0.7 {
 		t.Errorf("expected noul >= 0.7, got %v", ans.Noul)
+	}
+}
+
+func TestSystemOneSecretFastPath(t *testing.T) {
+	s := NewServer("http://127.0.0.1:9999") // Should not even reach llama
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	payload := map[string]any{
+		"model": "jev-latest",
+		"state": "CI build failed. Environment: GITHUB_TOKEN=ghp_ABC123xyzSecretToken456Value dumped in error trace.",
+		"questions": map[string]any{
+			"leak_check": map[string]any{
+				"type":         "noul",
+				"instructions": "Is there a leaked secret token or credential in the state?",
+			},
+		},
+	}
+	b, _ := json.Marshal(payload)
+	resp, err := http.Post(ts.URL+"/v1/systemone", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("failed request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var res struct {
+		Model   string `json:"model"`
+		Answers map[string]struct {
+			Type string   `json:"type"`
+			Noul *float64 `json:"noul"`
+		} `json:"answers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+
+	ans, ok := res.Answers["leak_check"]
+	if !ok {
+		t.Fatalf("missing answer for leak_check")
+	}
+	if ans.Type != "noul" {
+		t.Errorf("expected type noul, got %s", ans.Type)
+	}
+	if ans.Noul == nil || *ans.Noul != 0.99 {
+		t.Errorf("expected noul == 0.99, got %v", ans.Noul)
+	}
+}
+
+func TestParseNoulCoT(t *testing.T) {
+	tests := []struct {
+		input        string
+		wantReason   string
+		wantDecision string
+	}{
+		{
+			input:        "Reason: Customer requested refund.\nDecision: true",
+			wantReason:   "Customer requested refund.",
+			wantDecision: "true",
+		},
+		{
+			input:        "Reason: All tests passed with 0 errors.\nDecision: false",
+			wantReason:   "All tests passed with 0 errors.",
+			wantDecision: "false",
+		},
+		{
+			input:        "true",
+			wantReason:   "true",
+			wantDecision: "true",
+		},
+	}
+
+	for _, tc := range tests {
+		gotReason, gotDecision := schema.ParseNoulCoT(tc.input)
+		if gotReason != tc.wantReason {
+			t.Errorf("ParseNoulCoT(%q) reason = %q, want %q", tc.input, gotReason, tc.wantReason)
+		}
+		if gotDecision != tc.wantDecision {
+			t.Errorf("ParseNoulCoT(%q) decision = %q, want %q", tc.input, gotDecision, tc.wantDecision)
+		}
 	}
 }
 
