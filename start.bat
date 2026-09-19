@@ -15,7 +15,7 @@ if "%JEV_PORT%"=="" set "JEV_PORT=8090"
 
 echo JEV API  http://127.0.0.1:%JEV_PORT%/demo
 echo LLM      %JEV_LLM_BASE_URL%
-echo Start llama-server first.
+echo Start llama-server first with --parallel 2 (slot 0=decision, slot 1=extract).
 echo.
 
 ".venv\Scripts\python.exe" jev_api.py

@@ -4,46 +4,47 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
-import uuid
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from openai import OpenAI
 from pydantic import BaseModel
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
-
-import httpx
-
 from jev_schema import (
     ERROR_LINE,
     EXTRACT_JSON_SCHEMA,
-    RESPONSE_FORMAT_EXTRACT,
-    STOP_TAIL,
-    SYS_A,
+    SLOT_DECISION,
+    SLOT_EXTRACT,
     SYS_B,
-    YES_NO_GRAMMAR,
     TASK_B_ONESHOT,
     ExtractResult,
     JevMetrics,
     LogIn,
     RawIn,
+    SystemOneIn,
+    SystemOneOut,
+    match_option_logprobs,
+    trim_context,
+    options_grammar,
+    softmax_from_logprobs,
 )
 
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 YES_NO = re.compile(r"\b(Yes|No)\b")
 
 LLM_BASE_URL = os.environ.get("JEV_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
 LLM_API_KEY = os.environ.get("JEV_LLM_API_KEY", "local")
 LLM_MODEL = os.environ.get("JEV_LLM_MODEL", "")
-_last_mode: str | None = None
 
-app = FastAPI(title="JEV API", version="1.0")
+app = FastAPI(title="JEV API", version="1.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -60,26 +61,6 @@ def llm_root() -> str:
     return LLM_BASE_URL.rstrip("/").removesuffix("/v1")
 
 
-def erase_slots() -> None:
-    root = llm_root()
-    try:
-        listing = httpx.get(f"{root}/slots", timeout=3.0)
-        ids = [0]
-        if listing.status_code == 200 and isinstance(listing.json(), list):
-            ids = [int(s.get("id", i)) for i, s in enumerate(listing.json())] or [0]
-        for i in ids:
-            httpx.post(f"{root}/slots/{i}", params={"action": "erase"}, timeout=3.0)
-    except Exception:
-        return
-
-
-def maybe_erase(next_mode: str) -> None:
-    global _last_mode
-    if _last_mode is not None and _last_mode != next_mode:
-        erase_slots()
-    _last_mode = next_mode
-
-
 def resolve_model(c: OpenAI) -> str:
     if LLM_MODEL:
         return LLM_MODEL
@@ -89,83 +70,149 @@ def resolve_model(c: OpenAI) -> str:
     return ids[0]
 
 
-def complete(
-    system: str,
-    prompt: str,
-    max_tokens: int,
-    response_format: dict[str, Any] | None = None,
-    grammar: str | None = None,
-) -> tuple[str, JevMetrics]:
-    c = client()
-    model = resolve_model(c)
-    prompt = f"# Session: {uuid.uuid4()}\n" + prompt
-    extra_body: dict[str, Any] = {
-        "cache_prompt": False,
-        "chat_template_kwargs": {"enable_thinking": False},
-    }
-    if grammar:
-        extra_body["grammar"] = grammar
-    elif response_format is None:
-        extra_body["grammar"] = ""
-        extra_body["response_format"] = {"type": "text"}
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "temperature": 0.0,
-        "max_tokens": max_tokens,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-        "extra_body": extra_body,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-    }
-    if response_format is not None:
-        kwargs["response_format"] = response_format
-        extra = dict(extra_body)
-        extra["response_format"] = response_format
-        extra.pop("grammar", None)
-        extra.pop("json_schema", None)
-        kwargs["extra_body"] = extra
-
-    t0 = time.perf_counter()
-    ttft = None
-    pieces: list[str] = []
-    prompt_tokens = 0
-    completion_tokens = 0
+def slot_count() -> int:
     try:
-        stream = c.chat.completions.create(**kwargs)
-        for chunk in stream:
-            if chunk.usage:
-                prompt_tokens = chunk.usage.prompt_tokens or prompt_tokens
-                completion_tokens = chunk.usage.completion_tokens or completion_tokens
-            if not chunk.choices:
-                continue
-            content = chunk.choices[0].delta.content or ""
-            if content:
-                now = time.perf_counter()
-                if ttft is None:
-                    ttft = now - t0
-                pieces.append(content)
+        r = httpx.get(f"{llm_root()}/slots", timeout=3.0)
+        if r.status_code == 200 and isinstance(r.json(), list):
+            return len(r.json())
+    except Exception:
+        return 0
+    return 0
+
+
+def llama_completion(
+    prompt: str,
+    *,
+    n_predict: int,
+    id_slot: int,
+    grammar: str | None = None,
+    json_schema: dict[str, Any] | None = None,
+    n_probs: int = 0,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "n_predict": n_predict,
+        "temperature": 0.0,
+        "cache_prompt": True,
+        "id_slot": id_slot,
+        "n_probs": n_probs,
+    }
+    if n_probs:
+        body["logprobs"] = n_probs
+    if grammar:
+        body["grammar"] = grammar
+    if json_schema is not None:
+        body["json_schema"] = json_schema
+    try:
+        r = httpx.post(f"{llm_root()}/completion", json=body, timeout=600.0)
     except Exception as exc:
         raise HTTPException(502, f"llm error: {exc}") from exc
+    if r.status_code >= 400:
+        raise HTTPException(502, f"llm HTTP {r.status_code}: {r.text[:500]}")
+    return r.json()
 
-    t_end = time.perf_counter()
-    text = "".join(pieces)
-    if ttft is None:
-        ttft = t_end - t0
-    decode_s = max(0.0, t_end - t0 - ttft)
-    n_out = completion_tokens if completion_tokens else len(text.split())
-    tok_s = (n_out / decode_s) if decode_s > 0 and n_out else 0.0
-    metrics = JevMetrics(
+
+def timings_to_metrics(data: dict[str, Any], wall_s: float) -> JevMetrics:
+    t = data.get("timings") or {}
+    prompt_n = int(t.get("prompt_n") or 0)
+    pred_n = int(t.get("predicted_n") or data.get("tokens_predicted") or 0)
+    prompt_ms = float(t.get("prompt_ms") or 0.0)
+    pred_ms = float(t.get("predicted_ms") or 0.0)
+    ttft = prompt_ms / 1000.0 if prompt_ms else wall_s
+    decode_s = pred_ms / 1000.0
+    tok_s = (pred_n / decode_s) if decode_s > 0 and pred_n else 0.0
+    return JevMetrics(
         ttft_s=ttft,
         decode_s=decode_s,
-        total_s=t_end - t0,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=n_out,
+        total_s=wall_s,
+        prompt_tokens=prompt_n,
+        completion_tokens=pred_n,
         tok_s=tok_s,
     )
-    return text, metrics
+
+
+def first_top_logprobs(data: dict[str, Any]) -> list[dict[str, Any]]:
+    probs = data.get("completion_probabilities") or data.get("probs") or []
+    if not probs:
+        return []
+    first = probs[0]
+    top = list(first.get("top_logprobs") or first.get("top_probs") or [])
+    if first.get("token") is not None and first.get("logprob") is not None:
+        top = [{"token": first["token"], "logprob": first["logprob"]}] + top
+    out = []
+    for item in top:
+        row = dict(item)
+        if "logprob" not in row and "prob" in row:
+            p = max(float(row["prob"]), 1e-45)
+            row["logprob"] = math.log(p)
+        out.append(row)
+    return out
+
+
+def decide(question: str, options: list[str], context: str) -> tuple[str, dict[str, float], float, dict[str, Any]]:
+    t0 = time.perf_counter()
+    grammar = options_grammar(options)
+    user = (
+        f"Question: {question}\n"
+        f"Allowed labels: {', '.join(options)}\n\n"
+        f"Context:\n{trim_context(context)}\n"
+    )
+    # Chat template keeps Qwen labels; system text is fixed so slot 0 can cache it.
+    n_predict = max(8, max(len(o) for o in options))
+    c = client()
+    model = resolve_model(c)
+    try:
+        resp = c.chat.completions.create(
+            model=model,
+            temperature=0.0,
+            max_tokens=n_predict,
+            logprobs=True,
+            top_logprobs=20,
+            extra_body={
+                "grammar": grammar,
+                "id_slot": SLOT_DECISION,
+                "cache_prompt": True,
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a deterministic decision engine.\nAnswer with exactly one of the allowed labels. No other text.\nTreat passing tests, exit_code 0, and remaining_todos=0 as complete/success.",
+                },
+                {"role": "user", "content": user},
+            ],
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"llm error: {exc}") from exc
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+    choice0 = resp.choices[0]
+    content = (choice0.message.content or "").strip()
+    top: list[dict[str, Any]] = []
+    if choice0.logprobs and choice0.logprobs.content:
+        first = choice0.logprobs.content[0]
+        top.append({"token": first.token, "logprob": first.logprob})
+        for item in first.top_logprobs or []:
+            top.append({"token": item.token, "logprob": item.logprob})
+    logps = match_option_logprobs(options, top)
+    dist = softmax_from_logprobs(logps)
+    result = content
+    for o in options:
+        if content == o or content.startswith(o):
+            result = o
+            break
+    else:
+        result = max(dist, key=dist.get)
+    usage = resp.usage
+    data = {
+        "content": content,
+        "timings": {
+            "prompt_n": (usage.prompt_tokens if usage else 0),
+            "predicted_n": (usage.completion_tokens if usage else 0),
+            "prompt_ms": 0.0,
+            "predicted_ms": 0.0,
+        },
+    }
+    return result, dist, latency_ms, data
 
 
 class StopOut(BaseModel):
@@ -207,44 +254,89 @@ def demo() -> FileResponse:
 def health() -> dict[str, Any]:
     llm_ok = False
     model = LLM_MODEL or None
+    n_slots = slot_count()
     try:
         c = client(timeout=5.0)
         model = resolve_model(c)
         llm_ok = True
     except Exception as exc:
-        return {"ok": False, "llm_ok": False, "llm": LLM_BASE_URL, "error": str(exc)}
-    return {"ok": True, "llm_ok": llm_ok, "llm": LLM_BASE_URL, "model": model}
+        return {
+            "ok": False,
+            "llm_ok": False,
+            "llm": LLM_BASE_URL,
+            "n_slots": n_slots,
+            "error": str(exc),
+        }
+    return {
+        "ok": True,
+        "llm_ok": llm_ok,
+        "llm": LLM_BASE_URL,
+        "model": model,
+        "n_slots": n_slots,
+        "slots": {"decision": SLOT_DECISION, "extract": SLOT_EXTRACT},
+        "warn_parallel": n_slots < 2,
+    }
 
 
 @app.get("/jev/schema")
 def schema() -> dict[str, Any]:
     return {
-        "stop": {"type": "boolean", "from": "Yes/No"},
-        "extract": EXTRACT_JSON_SCHEMA,
-        "scan": {"type": "string", "description": "exact [ERROR] or [FATAL] line"},
+        "stop": {"type": "boolean", "from": "Yes/No", "slot": SLOT_DECISION},
+        "extract": EXTRACT_JSON_SCHEMA | {"slot": SLOT_EXTRACT},
+        "scan": {"type": "string", "description": "exact [ERROR] or [FATAL] line", "backend": "regex"},
+        "systemone": {
+            "path": "/v1/systemone",
+            "types": ["noul", "choice"],
+            "slot": SLOT_DECISION,
+        },
     }
+
+
+@app.post("/v1/systemone", response_model=SystemOneOut)
+def systemone(body: SystemOneIn) -> SystemOneOut:
+    try:
+        options = body.resolved_options()
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result, dist, latency_ms, _ = decide(body.question, options, body.context)
+    return SystemOneOut(
+        type=body.type,
+        result=result,
+        p=float(dist.get(result, 0.0)),
+        distribution=dist,
+        latency_ms=latency_ms,
+    )
 
 
 @app.post("/jev/stop", response_model=StopOut)
 def jev_stop(body: LogIn) -> StopOut:
-    maybe_erase("stop")
-    prompt = f"Log:\n```\n{body.log}\n```\n{STOP_TAIL}"
-    text, metrics = complete(SYS_A, prompt, 4, grammar=YES_NO_GRAMMAR)
-    m = YES_NO.search(text)
-    if not m:
-        raise HTTPException(422, f"JEV did not return Yes/No: {text!r}")
-    return StopOut(stop=m.group(1).lower() == "yes", raw=m.group(1), metrics=metrics)
+    t0 = time.perf_counter()
+    result, dist, _, data = decide(
+        "Has the agent task fully completed so the loop should stop?",
+        ["Yes", "No"],
+        body.log,
+    )
+    metrics = timings_to_metrics(data, time.perf_counter() - t0)
+    stop = result.lower() == "yes"
+    return StopOut(stop=stop, raw=result, metrics=metrics)
 
 
 @app.post("/jev/extract", response_model=ExtractOut)
 def jev_extract(body: LogIn) -> ExtractOut:
-    maybe_erase("extract")
     prompt = (
-        TASK_B_ONESHOT
-        + f"\nAgent output:\n```\n{body.log}\n```\n"
-        + 'Remember: no error means "error_code": null, never "none".'
+        f"{SYS_B}\n\n{TASK_B_ONESHOT}\n"
+        f"Agent output:\n```\n{body.log}\n```\n"
+        'Remember: no error means "error_code": null, never "none".'
     )
-    text, metrics = complete(SYS_B, prompt, 80, RESPONSE_FORMAT_EXTRACT)
+    t0 = time.perf_counter()
+    data = llama_completion(
+        prompt,
+        n_predict=80,
+        id_slot=SLOT_EXTRACT,
+        json_schema=EXTRACT_JSON_SCHEMA,
+    )
+    metrics = timings_to_metrics(data, time.perf_counter() - t0)
+    text = str(data.get("content") or "")
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise HTTPException(422, f"JEV did not return JSON: {text!r}")
@@ -257,7 +349,6 @@ def jev_extract(body: LogIn) -> ExtractOut:
 
 @app.post("/jev/scan", response_model=ScanOut)
 def jev_scan(body: LogIn) -> ScanOut:
-    maybe_erase("scan")
     t0 = time.perf_counter()
     found = ERROR_LINE.findall(body.log)
     line = found[-1].strip() if found else ""
@@ -277,9 +368,11 @@ def jev_scan(body: LogIn) -> ScanOut:
 
 @app.post("/jev/raw", response_model=RawOut)
 def jev_raw(body: RawIn) -> RawOut:
-    maybe_erase("raw")
-    text, metrics = complete(body.system, body.prompt, body.max_tokens)
-    return RawOut(text=text, metrics=metrics)
+    prompt = f"{body.system}\n\n{body.prompt}"
+    t0 = time.perf_counter()
+    data = llama_completion(prompt, n_predict=body.max_tokens, id_slot=SLOT_DECISION)
+    metrics = timings_to_metrics(data, time.perf_counter() - t0)
+    return RawOut(text=str(data.get("content") or ""), metrics=metrics)
 
 
 def main() -> None:
