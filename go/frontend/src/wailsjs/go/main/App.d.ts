@@ -14,6 +14,8 @@ export function SelectLlamaServer():Promise<string>;
 
 export function SelectModel():Promise<string>;
 
+export function SetBackend(arg1:string):Promise<string>;
+
 export function SetLanguage(arg1:string):Promise<void>;
 
 export function StartAutoDownload():Promise<void>;

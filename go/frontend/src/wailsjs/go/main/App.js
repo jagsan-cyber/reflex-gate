@@ -26,6 +26,10 @@ export function SelectModel() {
   return window['go']['main']['App']['SelectModel']();
 }
 
+export function SetBackend(arg1) {
+  return window['go']['main']['App']['SetBackend'](arg1);
+}
+
 export function SetLanguage(arg1) {
   return window['go']['main']['App']['SetLanguage'](arg1);
 }

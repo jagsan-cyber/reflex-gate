@@ -3,6 +3,7 @@ export namespace main {
 	export class ConfigDTO {
 	    llama_server: string;
 	    model: string;
+	    backend: string;
 	    context: number;
 	    gpu_layers: number;
 	    jev_port: number;
@@ -18,6 +19,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.llama_server = source["llama_server"];
 	        this.model = source["model"];
+	        this.backend = source["backend"];
 	        this.context = source["context"];
 	        this.gpu_layers = source["gpu_layers"];
 	        this.jev_port = source["jev_port"];
@@ -55,8 +57,12 @@ export namespace main {
 	export class ServerStatusDTO {
 	    running: boolean;
 	    starting: boolean;
+	    cpu_fallback: boolean;
 	    jev_port: number;
 	    status: string;
+	    active_backend: string;
+	    active_device: string;
+	    last_error?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ServerStatusDTO(source);
@@ -66,8 +72,12 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.running = source["running"];
 	        this.starting = source["starting"];
+	        this.cpu_fallback = source["cpu_fallback"];
 	        this.jev_port = source["jev_port"];
 	        this.status = source["status"];
+	        this.active_backend = source["active_backend"];
+	        this.active_device = source["active_device"];
+	        this.last_error = source["last_error"];
 	    }
 	}
 	export class InitialState {
