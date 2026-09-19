@@ -51,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/jev/extract", s.extract)
 	mux.HandleFunc("/jev/scan", s.scan)
 	mux.HandleFunc("/v1/systemone", s.systemone)
+	mux.HandleFunc("/jev/raw", s.raw)
 	return cors(mux)
 }
 
@@ -170,14 +171,27 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}
-	prompt := schema.SysB + "\n\n" + schema.TaskBOneShot + "\nAgent output:\n```\n" + log + "\n```\nRemember: no error means \"error_code\": null, never \"none\"."
+	user := schema.TaskBOneShot + "\nAgent output:\n```\n" + log + "\n```\nRemember: no error means \"error_code\": null, never \"none\"."
 	t0 := time.Now()
-	data, err := s.Llama.Completion(prompt, 80, schema.SlotExtract, 0, "", schema.ExtractSchema())
+	req := map[string]any{
+		"model":        "local",
+		"temperature":  0.0,
+		"max_tokens":   80,
+		"messages": []map[string]string{
+			{"role": "system", "content": schema.SysB},
+			{"role": "user", "content": user},
+		},
+		"json_schema":          schema.ExtractSchema(),
+		"id_slot":              schema.SlotExtract,
+		"cache_prompt":         true,
+		"chat_template_kwargs": map[string]any{"enable_thinking": false},
+	}
+	data, err := s.Llama.postJSON("/v1/chat/completions", req)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"detail": err.Error()})
 		return
 	}
-	text, _ := data["content"].(string)
+	text := jsonPathString(data, "choices", 0, "message", "content")
 	start, end := strings.Index(text, "{"), strings.LastIndex(text, "}")
 	if start < 0 || end <= start {
 		writeJSON(w, 422, map[string]string{"detail": "JEV did not return JSON: " + text})
@@ -215,6 +229,36 @@ func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
 			"ttft_s": dt, "decode_s": 0, "total_s": dt,
 			"prompt_tokens": 0, "completion_tokens": 0, "tok_s": 0,
 		},
+	})
+}
+
+func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Prompt    string `json:"prompt"`
+		System    string `json:"system"`
+		MaxTokens int    `json:"max_tokens"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 422, map[string]string{"detail": err.Error()})
+		return
+	}
+	if body.System == "" {
+		body.System = "Follow the user instruction exactly. No extra words."
+	}
+	if body.MaxTokens <= 0 {
+		body.MaxTokens = 30
+	}
+	prompt := body.System + "\n\n" + body.Prompt
+	t0 := time.Now()
+	data, err := s.Llama.Completion(prompt, body.MaxTokens, schema.SlotDecision, 0, "", nil)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"detail": err.Error()})
+		return
+	}
+	text, _ := data["content"].(string)
+	writeJSON(w, 200, map[string]any{
+		"text":    text,
+		"metrics": TimingsMetrics(data, time.Since(t0).Seconds()),
 	})
 }
 
