@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"embed"
+	"log"
+	"os"
 
 	"local-jev/internal/schema"
 )
@@ -17,10 +20,33 @@ import (
 //go:embed embed/demo.html
 var demoFS embed.FS
 
+type RequestEvent struct {
+	Task       string
+	SlotID     int
+	LatencyMs  int64
+	TTFTMs     int64
+	TokPerSec  float64
+	PromptToks int
+	OutToks    int
+	Summary    string
+	Timestamp  time.Time
+}
+
 type Server struct {
-	Llama *Llama
-	http  *http.Server
-	mu    sync.Mutex
+	Llama   *Llama
+	http    *http.Server
+	mu      sync.Mutex
+	OnEvent func(ev RequestEvent)
+}
+
+func (s *Server) emit(ev RequestEvent) {
+	ev.Timestamp = time.Now()
+	s.mu.Lock()
+	cb := s.OnEvent
+	s.mu.Unlock()
+	if cb != nil {
+		cb(ev)
+	}
 }
 
 func NewServer(llamaRoot string) *Server {
@@ -155,6 +181,22 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 502, map[string]string{"detail": err.Error()})
 		return
 	}
+	latencyMs := time.Since(t0).Milliseconds()
+	ttftMs := latencyMs
+	toks := 0.0
+	if cn > 0 && latencyMs > 0 {
+		toks = float64(cn) / (float64(latencyMs) / 1000.0)
+	}
+	s.emit(RequestEvent{
+		Task:       "Task A (Stop)",
+		SlotID:     0,
+		LatencyMs:  latencyMs,
+		TTFTMs:     ttftMs,
+		TokPerSec:  toks,
+		PromptToks: pn,
+		OutToks:    cn,
+		Summary:    fmt.Sprintf("stop=%v (%s)", strings.EqualFold(result, "Yes"), result),
+	})
 	writeJSON(w, 200, map[string]any{
 		"stop": strings.EqualFold(result, "Yes"),
 		"raw":  result,
@@ -166,12 +208,18 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
-	log, err := readLog(r)
+	logText, err := readLog(r)
 	if err != nil {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}
-	user := schema.TaskBOneShot + "\nAgent output:\n```\n" + log + "\n```\nRemember: no error means \"error_code\": null, never \"none\"."
+
+	userMsg := buildExtractUserPrompt(logText)
+
+	if os.Getenv("JEV_DEBUG") != "" {
+		log.Printf("[extract] user len=%d", len(userMsg))
+	}
+
 	t0 := time.Now()
 	req := map[string]any{
 		"model":        "local",
@@ -179,7 +227,15 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		"max_tokens":   80,
 		"messages": []map[string]string{
 			{"role": "system", "content": schema.SysB},
-			{"role": "user", "content": user},
+			{"role": "user", "content": userMsg},
+		},
+		"response_format": map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   "jev_extract",
+				"schema": schema.ExtractSchema(),
+				"strict": true,
+			},
 		},
 		"json_schema":          schema.ExtractSchema(),
 		"id_slot":              schema.SlotExtract,
@@ -203,11 +259,35 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, map[string]string{"detail": err.Error()})
 		return
 	}
+	metrics := TimingsMetrics(data, time.Since(t0).Seconds())
+	latMs := time.Since(t0).Milliseconds()
+	ttftMs := int64(asFloat(metrics["ttft_s"]) * 1000)
+	toks := asFloat(metrics["tok_s"])
+	pn := asInt(metrics["prompt_tokens"])
+	cn := asInt(metrics["completion_tokens"])
+	summary := fmt.Sprintf("status=%v, tool=%v", parsed["status"], parsed["tool"])
+	s.emit(RequestEvent{
+		Task:       "Task B (Extract)",
+		SlotID:     1,
+		LatencyMs:  latMs,
+		TTFTMs:     ttftMs,
+		TokPerSec:  toks,
+		PromptToks: pn,
+		OutToks:    cn,
+		Summary:    summary,
+	})
 	writeJSON(w, 200, map[string]any{
 		"result":  parsed,
 		"raw":     raw,
-		"metrics": TimingsMetrics(data, time.Since(t0).Seconds()),
+		"metrics": metrics,
 	})
+}
+
+func buildExtractUserPrompt(logText string) string {
+	if strings.Contains(logText, "Required keys:") || strings.Contains(logText, "Agent output:") {
+		return logText
+	}
+	return schema.TaskBOneShot + "\nAgent output:\n```\n" + logText + "\n```\nRemember: no error means \"error_code\": null, never \"none\"."
 }
 
 func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +303,14 @@ func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
 		line = strings.TrimSpace(found[len(found)-1])
 	}
 	dt := time.Since(t0).Seconds()
+	s.emit(RequestEvent{
+		Task:       "Task C (Scan)",
+		SlotID:     -1,
+		LatencyMs:  time.Since(t0).Milliseconds(),
+		TTFTMs:     0,
+		TokPerSec:  0,
+		Summary:    fmt.Sprintf("needle=%s", line),
+	})
 	writeJSON(w, 200, map[string]any{
 		"line": line,
 		"metrics": map[string]any{
@@ -256,9 +344,18 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text, _ := data["content"].(string)
+	metrics := TimingsMetrics(data, time.Since(t0).Seconds())
+	s.emit(RequestEvent{
+		Task:       "Raw Prompt",
+		SlotID:     0,
+		LatencyMs:  time.Since(t0).Milliseconds(),
+		TTFTMs:     int64(asFloat(metrics["ttft_s"]) * 1000),
+		TokPerSec:  asFloat(metrics["tok_s"]),
+		Summary:    strings.ReplaceAll(strings.TrimSpace(text), "\n", " "),
+	})
 	writeJSON(w, 200, map[string]any{
 		"text":    text,
-		"metrics": TimingsMetrics(data, time.Since(t0).Seconds()),
+		"metrics": metrics,
 	})
 }
 
@@ -289,11 +386,19 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := dist[result]
+	latMs := time.Since(t0).Milliseconds()
+	s.emit(RequestEvent{
+		Task:      "SystemOne (" + body.Type + ")",
+		SlotID:    0,
+		LatencyMs: latMs,
+		TTFTMs:    latMs,
+		Summary:   fmt.Sprintf("%s (p=%.2f)", result, p),
+	})
 	writeJSON(w, 200, map[string]any{
 		"type":         body.Type,
 		"result":       result,
 		"p":            p,
 		"distribution": dist,
-		"latency_ms":   float64(time.Since(t0).Milliseconds()),
+		"latency_ms":   float64(latMs),
 	})
 }

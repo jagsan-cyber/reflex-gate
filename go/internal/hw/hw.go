@@ -30,6 +30,20 @@ func (i Info) Summary() string {
 	return fmt.Sprintf("環境検知: %s (空きRAM %.1fGB) - 推奨 %s", gpu, freeGB, opt)
 }
 
+func (i Info) SummaryEN() string {
+	vramGB := float64(i.VRAMBytes) / (1024 * 1024 * 1024)
+	freeGB := float64(i.FreeRAM) / (1024 * 1024 * 1024)
+	gpu := i.Name
+	if gpu == "" {
+		gpu = "No GPU / CPU"
+	}
+	opt := fmt.Sprintf("%s / %dK", strings.ToUpper(i.Backend), i.Context/1024)
+	if vramGB >= 0.1 {
+		return fmt.Sprintf("Detected: %s (VRAM %.0fGB, Free RAM %.1fGB) - Rec: %s", gpu, vramGB, freeGB, opt)
+	}
+	return fmt.Sprintf("Detected: %s (Free RAM %.1fGB) - Rec: %s", gpu, freeGB, opt)
+}
+
 func (i Info) ModeLabel() string {
 	return fmt.Sprintf("自動判定 (推奨: %dK / %s)", i.Context/1024, strings.ToUpper(i.Backend))
 }
@@ -52,8 +66,9 @@ func Recommend(name string, vram, totalRAM, freeRAM uint64) Info {
 		info.Backend = "cpu"
 		info.GPULayers = 0
 	default:
-		info.Vendor = "unknown"
-		info.Backend = "vulkan"
+		info.Vendor = "cpu"
+		info.Backend = "cpu"
+		info.GPULayers = 0
 	}
 
 	freeGB := float64(freeRAM) / (1024 * 1024 * 1024)

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "local-jev",
+  "outputfilename": "local-jev",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "wailsjsdir": "frontend/src",
+  "version": "2",
+  "author": {
+    "name": "JEV Team"
+  },
+  "info": {
+    "companyName": "JEV",
+    "productName": "local-jev",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2026",
+    "comments": "local-jev Fast AI Gateway (Qwen3.5-0.8B)"
+  }
+}

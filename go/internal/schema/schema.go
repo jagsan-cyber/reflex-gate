@@ -120,18 +120,6 @@ func MatchOptionLogprobs(options []string, top []struct {
 	return out
 }
 
-func ExtractSchema() map[string]any {
-	var m map[string]any
-	_ = json.Unmarshal([]byte(`{
-		"type": "object",
-		"properties": {
-			"status": {"type": "string", "enum": ["passed", "failed", "timeout", "running"]},
-			"error_code": {"type": ["string", "null"], "pattern": "^E[0-9]+$", "not": {"enum": ["none", ""]}},
-			"files_changed": {"type": "integer"},
-			"tool": {"type": "string"}
-		},
-		"required": ["status", "error_code", "files_changed", "tool"],
-		"additionalProperties": false
-	}`), &m)
-	return m
+func ExtractSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["passed","failed","timeout","running"]},"error_code":{"type":["string","null"],"pattern":"^E[0-9]+$","not":{"enum":["none",""]}},"files_changed":{"type":"integer"},"tool":{"type":"string"}},"required":["status","error_code","files_changed","tool"],"additionalProperties":false}`)
 }

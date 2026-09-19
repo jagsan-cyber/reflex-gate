@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	GGUFURL = "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf?download=true"
-	GGUFName = "Qwen3.5-0.8B-Q8_0.gguf"
-	ReleaseAPI = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+	GGUFURL    = "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf?download=true"
+	GGUFName   = "Qwen3.5-0.8B-Q8_0.gguf"
+	ReleaseAPI = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5"
 )
 
 type Progress func(label string, done, total int64)
@@ -29,35 +29,70 @@ func FetchAll(baseDir, backend string, prog Progress) (llamaExe, modelPath strin
 		return
 	}
 	modelPath = filepath.Join(modelDir, GGUFName)
-	if prog != nil {
-		prog("GGUF", 0, 1)
-	}
-	if err = fetchFile(GGUFURL, modelPath, func(d, t int64) {
+	if fi, statErr := os.Stat(modelPath); statErr == nil && fi.Size() > 100*1024*1024 {
 		if prog != nil {
-			prog("GGUF", d, t)
+			prog("GGUF (既存確認済み)", fi.Size(), fi.Size())
 		}
-	}); err != nil {
+	} else {
+		if prog != nil {
+			prog("GGUF", 0, 1)
+		}
+		if err = fetchFile(GGUFURL, modelPath, func(d, t int64) {
+			if prog != nil {
+				prog("GGUF", d, t)
+			}
+		}); err != nil {
+			return
+		}
+	}
+
+	normBackend := strings.ToLower(backend)
+	if normBackend == "" || normBackend == "auto" {
+		normBackend = "vulkan"
+	}
+
+	extractDir := filepath.Join(binDir, "llama.cpp-"+normBackend)
+	if found, findErr := findExe(extractDir, "llama-server.exe"); findErr == nil {
+		llamaExe = found
+		if prog != nil {
+			prog("llama-server (既存確認済み)", 1, 1)
+		}
 		return
 	}
-	zipPath := filepath.Join(binDir, "llama-server.zip")
-	url, err := latestLlamaZipURL(backend)
+
+	zipPath := filepath.Join(binDir, "llama-server-"+normBackend+".zip")
+	url, cudartURL, err := latestLlamaZipURL(normBackend)
 	if err != nil {
-		return
+		return "", "", err
 	}
 	if prog != nil {
-		prog("llama-server zip", 0, 1)
+		prog(fmt.Sprintf("llama-server [%s]", normBackend), 0, 1)
 	}
 	if err = fetchFile(url, zipPath, func(d, t int64) {
 		if prog != nil {
-			prog("llama-server zip", d, t)
+			prog(fmt.Sprintf("llama-server [%s]", normBackend), d, t)
 		}
 	}); err != nil {
-		return
+		return "", "", err
 	}
-	extractDir := filepath.Join(binDir, "llama.cpp")
 	if err = unzip(zipPath, extractDir); err != nil {
-		return
+		return "", "", err
 	}
+
+	if cudartURL != "" {
+		cudartZip := filepath.Join(binDir, "cudart.zip")
+		if prog != nil {
+			prog("CUDA runtime DLLs", 0, 1)
+		}
+		if err = fetchFile(cudartURL, cudartZip, func(d, t int64) {
+			if prog != nil {
+				prog("CUDA runtime DLLs", d, t)
+			}
+		}); err == nil {
+			_ = unzip(cudartZip, extractDir)
+		}
+	}
+
 	llamaExe, err = findExe(extractDir, "llama-server.exe")
 	if err != nil {
 		llamaExe, err = findExe(extractDir, "llama-server")
@@ -65,73 +100,110 @@ func FetchAll(baseDir, backend string, prog Progress) (llamaExe, modelPath strin
 	return
 }
 
-func latestLlamaZipURL(flavor string) (string, error) {
+func latestLlamaZipURL(flavor string) (zipURL string, cudartURL string, err error) {
 	req, _ := http.NewRequest(http.MethodGet, ReleaseAPI, nil)
 	req.Header.Set("User-Agent", "local-jev")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("github HTTP %d: %s", resp.StatusCode, b)
+		return "", "", fmt.Errorf("github HTTP %d: %s", resp.StatusCode, b)
 	}
-	var rel struct {
-		Assets []struct {
+
+	var releases []struct {
+		TagName    string `json:"tag_name"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
+		Assets     []struct {
 			Name string `json:"name"`
 			URL  string `json:"browser_download_url"`
 		} `json:"assets"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return "", err
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return "", "", err
 	}
-	var vulkan, cuda12, cuda, cpu string
-	for _, a := range rel.Assets {
+
+	var bestAssets []struct {
+		Name string `json:"name"`
+		URL  string `json:"browser_download_url"`
+	}
+	for _, r := range releases {
+		if !r.Draft && len(r.Assets) > 0 {
+			bestAssets = r.Assets
+			break
+		}
+	}
+
+	if len(bestAssets) == 0 {
+		return "", "", fmt.Errorf("no releases found on llama.cpp repository")
+	}
+
+	var vulkan, cuda12, cudart, rocm, sycl, cpu string
+	for _, a := range bestAssets {
 		n := strings.ToLower(a.Name)
-		if !strings.Contains(n, "win") || !strings.HasSuffix(n, ".zip") || !strings.Contains(n, "x64") {
+		if !strings.Contains(n, "win") || !strings.HasSuffix(n, ".zip") || strings.Contains(n, "arm64") {
 			continue
 		}
 		switch {
+		case strings.Contains(n, "cudart"):
+			cudart = a.URL
 		case strings.Contains(n, "vulkan"):
 			vulkan = a.URL
-		case strings.Contains(n, "cu12") || strings.Contains(n, "cuda-12") || strings.Contains(n, "cuda12"):
+		case strings.Contains(n, "cuda-12") || strings.Contains(n, "cuda12") || strings.Contains(n, "cu12"):
 			cuda12 = a.URL
-		case strings.Contains(n, "cuda"):
-			cuda = a.URL
+		case strings.Contains(n, "rocm") || strings.Contains(n, "hip"):
+			rocm = a.URL
+		case strings.Contains(n, "sycl"):
+			sycl = a.URL
 		case strings.Contains(n, "cpu") || strings.Contains(n, "avx2"):
 			if cpu == "" {
 				cpu = a.URL
 			}
 		}
 	}
+
 	switch strings.ToLower(flavor) {
 	case "cuda":
 		if cuda12 != "" {
-			return cuda12, nil
-		}
-		if cuda != "" {
-			return cuda, nil
+			return cuda12, cudart, nil
 		}
 		if vulkan != "" {
-			return vulkan, nil
+			return vulkan, "", nil
+		}
+	case "hip", "rocm":
+		if rocm != "" {
+			return rocm, "", nil
+		}
+		if vulkan != "" {
+			return vulkan, "", nil
+		}
+	case "sycl", "intel":
+		if sycl != "" {
+			return sycl, "", nil
+		}
+		if vulkan != "" {
+			return vulkan, "", nil
 		}
 	case "cpu":
 		if cpu != "" {
-			return cpu, nil
+			return cpu, "", nil
 		}
 		if vulkan != "" {
-			return vulkan, nil
+			return vulkan, "", nil
 		}
-	default:
+	default: // vulkan or auto
 		if vulkan != "" {
-			return vulkan, nil
+			return vulkan, "", nil
 		}
 		if cpu != "" {
-			return cpu, nil
+			return cpu, "", nil
 		}
 	}
-	return "", fmt.Errorf("no Windows llama-server zip in latest release")
+
+	return "", "", fmt.Errorf("no matching Windows llama-server zip found for backend %q", flavor)
 }
 
 func fetchFile(url, dest string, prog func(done, total int64)) error {
@@ -152,7 +224,7 @@ func fetchFile(url, dest string, prog func(done, total int64)) error {
 	}
 	total := resp.ContentLength
 	var done int64
-	buf := make([]byte, 256*1024)
+	buf := make([]byte, 1024*1024)
 	for {
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {

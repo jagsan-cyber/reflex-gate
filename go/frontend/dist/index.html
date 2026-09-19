@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>local-jev</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-dark">
+  <div id="app">
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">LOCAL-JEV</div>
+          <div class="brand-subtitle" id="hdrSubtitle">Qwen3.5-0.8B Fast AI Gateway</div>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="hw-badge" id="hwBadge">
+          <span class="hw-icon">⚡</span>
+          <span id="hwText">Detecting hardware...</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="status-pill" id="statusPill">
+          <span class="status-dot"></span>
+          <span class="status-label" id="statusLabel">STOPPED</span>
+        </div>
+        <button class="btn-lang" id="btnLangToggle" title="Toggle Language (JA / EN)">
+          <span class="lang-text">EN</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Download Progress Banner (Hidden by default) -->
+    <div class="dl-banner hidden" id="dlBanner">
+      <div class="dl-info">
+        <span class="dl-label" id="dlLabel">Downloading assets...</span>
+        <span class="dl-percent" id="dlPercent">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-bar" id="dlProgressBar" style="width: 0%;"></div>
+      </div>
+    </div>
+
+    <!-- Main Content Layout (2 Columns) -->
+    <main class="main-container">
+      <!-- Left Column: Controls & Configuration -->
+      <section class="col-left">
+        <!-- Configuration Card -->
+        <div class="panel-card">
+          <div class="panel-title" id="secTitleConfig">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span id="txtServerModelConfig">サーバー & モデル設定</span>
+          </div>
+
+          <div class="form-group">
+            <label id="lblLlamaServer">llama-server.exe のパス</label>
+            <div class="input-with-btn">
+              <input type="text" id="inputLlamaServer" spellcheck="false" placeholder="llama-server.exe の絶対パス">
+              <button class="btn-subtle" id="btnBrowseLlama" id-text="btnBrowse">参照</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label id="lblModel">Qwen3.5-0.8B GGUF モデル</label>
+            <div class="input-with-btn">
+              <input type="text" id="inputModel" spellcheck="false" placeholder="Qwen3.5-0.8B GGUF の絶対パス">
+              <button class="btn-subtle" id="btnBrowseModel" id-text="btnBrowse">参照</button>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <button class="btn-outline-cyan" id="btnAutoDL">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span id="txtAutoDL">バイナリ & モデル自動取得</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Execution Settings Card -->
+        <div class="panel-card">
+          <div class="panel-title">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            <span id="txtExecSettings">実行オプション & ポート</span>
+          </div>
+
+          <div class="grid-2col">
+            <div class="form-group">
+              <label id="lblBackend">推論バックエンド</label>
+              <select id="selectBackend">
+                <option value="auto" id="optBackendAuto">自動検出 (推奨)</option>
+                <option value="vulkan" id="optBackendVulkan">Vulkan (AMD 860M / Intel / 汎用)</option>
+                <option value="cuda" id="optBackendCUDA">CUDA (NVIDIA RTX / GeForce)</option>
+                <option value="hip" id="optBackendHIP">ROCm / HIP (AMD Radeon)</option>
+                <option value="sycl" id="optBackendSYCL">Intel SYCL (Arc / Core Ultra)</option>
+                <option value="cpu" id="optBackendCPU">CPU のみ (NGL=0)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label id="lblContext">コンテキスト長</label>
+              <select id="selectContext">
+                <option value="8192" id="optCtx8k">8,192 (推奨)</option>
+                <option value="16384">16,384</option>
+                <option value="32768" id="optCtx32k">32,768 (最大)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid-2col">
+            <div class="form-group">
+              <label id="lblJevPort">JEV API ポート</label>
+              <input type="number" id="inputJevPort" value="8090">
+            </div>
+            <div class="form-group">
+              <label id="lblLlamaPort">llama-server ポート</label>
+              <input type="number" id="inputLlamaPort" value="8080">
+            </div>
+          </div>
+
+          <!-- Controls Button Group -->
+          <div class="btn-group-actions">
+            <button class="btn-neon-green" id="btnStartServer">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <span id="txtStartServer">JEV 起動</span>
+            </button>
+            <button class="btn-neon-red" id="btnStopServer" disabled>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
+              <span id="txtStopServer">停止</span>
+            </button>
+          </div>
+
+          <div class="btn-group-secondary">
+            <button class="btn-subtle" id="btnOpenDemo" disabled>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+              <span id="txtOpenDemo">Webデモを開く</span>
+            </button>
+            <button class="btn-subtle" id="btnCopyURL">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <span id="txtCopyURL">URLコピー</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Test Suite -->
+        <div class="panel-card">
+          <div class="panel-title">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+            <span id="txtQuickTest">クイックテスト実行</span>
+          </div>
+          <div class="quick-test-bar">
+            <button class="btn-test" id="btnTestStop" disabled>Stop 判定</button>
+            <button class="btn-test" id="btnTestExtract" disabled>Diff抽出</button>
+            <button class="btn-test" id="btnTestScan" disabled>エラー検知</button>
+            <button class="btn-test btn-stress" id="btnTestStress" disabled>⚡ 負荷連打</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Visual Telemetry & Real-Time Logs -->
+      <section class="col-right">
+        <!-- Live AI Performance Telemetry -->
+        <div class="panel-card telemetry-card">
+          <div class="panel-header-with-status">
+            <div class="panel-title">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              <span id="txtLiveMonitor">リアルタイム AI パフォーマンス監視</span>
+            </div>
+            <div class="header-monitor-status">
+              <!-- Active Engine Device Badge -->
+              <div class="engine-badge hidden" id="engineBadge">
+                <span class="engine-icon" id="engineIcon">⚡</span>
+                <span class="engine-text" id="engineText">GPU: Vulkan</span>
+              </div>
+              <!-- Dual Processing Slot LEDs -->
+              <div class="slot-container">
+                <div class="slot-badge" id="slot0Badge">
+                  <span class="slot-led" id="slot0Led"></span>
+                  <span class="slot-name">SLOT 0</span>
+                </div>
+                <div class="slot-badge" id="slot1Badge">
+                  <span class="slot-led" id="slot1Led"></span>
+                  <span class="slot-name">SLOT 1</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-time Latency Level Meter (Audio-VU Style Bar) -->
+          <div class="meter-container">
+            <div class="meter-header">
+              <span class="meter-label" id="lblLatencyMeter">応答レイテンシ・レベルメーター</span>
+              <span class="meter-numeric" id="meterLatencyText">0 ms</span>
+            </div>
+            <div class="meter-track">
+              <div class="meter-fill" id="meterFill" style="width: 0%;"></div>
+            </div>
+            <div class="meter-scale">
+              <span>0ms</span>
+              <span>100ms</span>
+              <span>200ms</span>
+              <span>300ms</span>
+              <span>400ms</span>
+              <span>500ms+</span>
+            </div>
+          </div>
+
+          <!-- Oscilloscope Waveform Canvas -->
+          <div class="canvas-wrapper">
+            <canvas id="waveformCanvas" width="560" height="140"></canvas>
+            <div class="canvas-legend">
+              <span class="legend-target">TARGET: &lt;100ms</span>
+              <span class="legend-scale">SCALE: 0-600ms</span>
+            </div>
+          </div>
+
+          <!-- KPI Display Badges -->
+          <div class="kpi-grid">
+            <div class="kpi-box">
+              <div class="kpi-header" id="kpiHdrLatency">応答レイテンシ</div>
+              <div class="kpi-value cyan" id="kpiValLatency">0 <span class="unit">ms</span></div>
+            </div>
+            <div class="kpi-box">
+              <div class="kpi-header" id="kpiHdrTTFT">TTFT (初回応答)</div>
+              <div class="kpi-value cyan" id="kpiValTTFT">0 <span class="unit">ms</span></div>
+            </div>
+            <div class="kpi-box">
+              <div class="kpi-header" id="kpiHdrSpeed">生成速度</div>
+              <div class="kpi-value green" id="kpiValSpeed">0.0 <span class="unit">t/s</span></div>
+            </div>
+            <div class="kpi-box">
+              <div class="kpi-header" id="kpiHdrCalls">総コール数</div>
+              <div class="kpi-value purple" id="kpiValCalls">0 <span class="unit">reqs</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity Log Card -->
+        <div class="panel-card log-card">
+          <div class="panel-header-with-status">
+            <div class="panel-title">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              <span id="txtRecentLogs">リアルタイム推論ログ</span>
+            </div>
+            <div class="log-actions">
+              <button class="btn-micro" id="btnLogCopy" id-text="btnLogCopy">コピー</button>
+              <button class="btn-micro" id="btnLogClear" id-text="btnLogClear">クリア</button>
+            </div>
+          </div>
+
+          <div class="terminal-container" id="logTerminal">
+            <div class="terminal-empty" id="terminalEmpty">No requests yet. Start server to monitor activity.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Global Toast / Alert -->
+    <div class="toast hidden" id="appToast">
+      <span class="toast-message" id="toastMessage"></span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

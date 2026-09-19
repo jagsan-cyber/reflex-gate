@@ -13,6 +13,10 @@ type Config struct {
 	Context     int    `json:"context"`
 	Backend     string `json:"backend"`
 	GPULayers   int    `json:"gpu_layers"`
+	JevPort     int    `json:"jev_port"`
+	LlamaPort   int    `json:"llama_port"`
+	Host        string `json:"host"`
+	Lang        string `json:"lang"`
 }
 
 func Path() string {
@@ -32,12 +36,30 @@ func DataDir() string {
 }
 
 func Load() Config {
-	var c Config
+	c := Config{
+		JevPort:   8090,
+		LlamaPort: 8080,
+		Host:      "127.0.0.1",
+		Context:   8192,
+		Lang:      "ja",
+	}
 	b, err := os.ReadFile(Path())
 	if err != nil {
 		return c
 	}
 	_ = json.Unmarshal(b, &c)
+	if c.JevPort <= 0 {
+		c.JevPort = 8090
+	}
+	if c.LlamaPort <= 0 {
+		c.LlamaPort = 8080
+	}
+	if c.Host == "" {
+		c.Host = "127.0.0.1"
+	}
+	if c.Lang != "en" && c.Lang != "ja" {
+		c.Lang = "ja"
+	}
 	return c
 }
 

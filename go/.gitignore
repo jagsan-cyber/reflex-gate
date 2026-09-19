@@ -1,5 +1,5 @@
 *.exe
 bin/
+build/bin/
 models/
-config.json
 config.json
