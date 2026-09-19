@@ -280,13 +280,36 @@ function updateLanguage(lang) {
 // Toast Notification
 // ==========================================================================
 let toastTimer = null;
-function showToast(msg) {
+function showToast(msg, duration = 3000) {
   elements.toastMessage.textContent = msg;
   elements.appToast.classList.remove("hidden");
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     elements.appToast.classList.add("hidden");
-  }, 2500);
+  }, duration);
+}
+
+function appendErrorLog(msg) {
+  if (elements.terminalEmpty) {
+    elements.terminalEmpty.remove();
+    elements.terminalEmpty = null;
+  }
+
+  const timeStr = new Date().toTimeString().split(" ")[0];
+  const row = document.createElement("div");
+  row.className = "log-row";
+  row.style.borderLeft = "2px solid #F43F5E";
+  row.innerHTML = `
+    <span class="log-time" style="color:#F43F5E;">[${timeStr}]</span>
+    <span class="log-task" style="color:#F43F5E;border-color:rgba(244,63,94,0.3);background:rgba(244,63,94,0.1);">ALERT</span>
+    <span class="log-summary" style="color:#FDA4AF;">${escapeHtml(msg)}</span>
+  `;
+
+  elements.logTerminal.appendChild(row);
+  while (elements.logTerminal.children.length > 50) {
+    elements.logTerminal.removeChild(elements.logTerminal.firstChild);
+  }
+  elements.logTerminal.scrollTop = elements.logTerminal.scrollHeight;
 }
 
 // ==========================================================================
@@ -530,7 +553,8 @@ function updateStatus(status) {
     stopStress();
 
     if (status.last_error) {
-      showToast(status.last_error);
+      showToast(status.last_error, 5000);
+      appendErrorLog(status.last_error);
     }
   }
 }
@@ -662,7 +686,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       try {
         await window.go.main.App.StartServer(cfg);
       } catch (err) {
-        showToast("Launch failed: " + err);
+        showToast("" + err, 5000);
+        appendErrorLog("" + err);
       }
     }
   });

@@ -3,6 +3,7 @@ package proc
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,19 @@ func (b *tailBuffer) String() string {
 	return strings.Join(b.lines, "\n")
 }
 
+func IsPortInUse(host string, port int) bool {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	addr := fmt.Sprintf("%s:%d", host, port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return true
+	}
+	_ = ln.Close()
+	return false
+}
+
 type Runner struct {
 	mu       sync.Mutex
 	cmd      *exec.Cmd
@@ -46,7 +60,6 @@ type Runner struct {
 	exited   bool
 	exitCode int
 	lastErr  string
-	lastPort int
 }
 
 type Options struct {
@@ -76,9 +89,9 @@ func (r *Runner) Start(llamaExe, model string, opt Options) error {
 		opt.Host = "127.0.0.1"
 	}
 
-	// Terminate any stale process occupying the target port before launch
-	KillProcessOnPort(opt.LlamaPort)
-	r.lastPort = opt.LlamaPort
+	if IsPortInUse(opt.Host, opt.LlamaPort) {
+		return fmt.Errorf("port %d is already in use by another application", opt.LlamaPort)
+	}
 
 	args := []string{
 		"-m", model,
@@ -144,7 +157,6 @@ func (r *Runner) Stop() {
 	r.mu.Lock()
 	cmd := r.cmd
 	r.cmd = nil
-	port := r.lastPort
 	r.mu.Unlock()
 	if cmd != nil && cmd.Process != nil {
 		killTree(cmd)
@@ -158,9 +170,6 @@ func (r *Runner) Stop() {
 		case <-time.After(2 * time.Second):
 			_ = cmd.Process.Kill()
 		}
-	}
-	if port > 0 {
-		KillProcessOnPort(port)
 	}
 }
 

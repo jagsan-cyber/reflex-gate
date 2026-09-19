@@ -278,6 +278,54 @@ func (a *App) StartServer(dto ConfigDTO) error {
 		return fmt.Errorf("model not found: %s", modelPath)
 	}
 
+	if a.cfg.LlamaPort == a.cfg.JevPort {
+		a.mu.Unlock()
+		errMsg := fmt.Sprintf("Llama Port and JEV Port cannot be the same (%d). Please change one in Settings.", a.cfg.LlamaPort)
+		if a.cfg.Lang != "en" {
+			errMsg = fmt.Sprintf("Llama ポートと JEV ポートが重複しています (%d)。設定画面で別のポートを指定してください。", a.cfg.LlamaPort)
+		}
+		runtime.EventsEmit(a.ctx, "status-changed", ServerStatusDTO{
+			Running:   false,
+			Starting:  false,
+			JevPort:   a.cfg.JevPort,
+			Status:    "stopped",
+			LastError: errMsg,
+		})
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	if proc.IsPortInUse(a.cfg.Host, a.cfg.LlamaPort) {
+		a.mu.Unlock()
+		errMsg := fmt.Sprintf("Llama Port %d is already in use by another application. Please change the port in Settings.", a.cfg.LlamaPort)
+		if a.cfg.Lang != "en" {
+			errMsg = fmt.Sprintf("Llama ポート (%d) は既に他のアプリケーションで使用されています。設定画面でポート番号を変更するか、該当アプリを終了してください。", a.cfg.LlamaPort)
+		}
+		runtime.EventsEmit(a.ctx, "status-changed", ServerStatusDTO{
+			Running:   false,
+			Starting:  false,
+			JevPort:   a.cfg.JevPort,
+			Status:    "stopped",
+			LastError: errMsg,
+		})
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	if proc.IsPortInUse(a.cfg.Host, a.cfg.JevPort) {
+		a.mu.Unlock()
+		errMsg := fmt.Sprintf("JEV Port %d is already in use by another application. Please change the port in Settings.", a.cfg.JevPort)
+		if a.cfg.Lang != "en" {
+			errMsg = fmt.Sprintf("JEV ポート (%d) は既に他のアプリケーションで使用されています。設定画面でポート番号を変更するか、該当アプリを終了してください。", a.cfg.JevPort)
+		}
+		runtime.EventsEmit(a.ctx, "status-changed", ServerStatusDTO{
+			Running:   false,
+			Starting:  false,
+			JevPort:   a.cfg.JevPort,
+			Status:    "stopped",
+			LastError: errMsg,
+		})
+		return fmt.Errorf("%s", errMsg)
+	}
+
 	opts := proc.Options{
 		Context:   a.cfg.Context,
 		Parallel:  2,
@@ -433,7 +481,6 @@ func (a *App) StopServer() error {
 	a.activeBackend = ""
 	a.activeDevice = ""
 	a.runner.Stop()
-	proc.KillProcessOnPort(a.cfg.LlamaPort)
 	a.mu.Unlock()
 
 	runtime.EventsEmit(a.ctx, "status-changed", ServerStatusDTO{
