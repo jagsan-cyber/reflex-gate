@@ -217,9 +217,23 @@ overhead compared to a single cloud LLM call.
 
 ---
 
-## 📄 License
+## 📄 License & Disclaimers
 
-MIT License. See [LICENSE](LICENSE) for details.
+### License
+ReflexGate is open-source software licensed under the [MIT License](LICENSE).  
+Copyright (c) 2026 ReflexGate Contributors.
+
+### Third-Party Licenses & Attribution
+ReflexGate coordinates and runs local third-party models and inference engines:
+- **llama.cpp**: Licensed under the MIT License. Copyright (c) 2023-2026 Georgi Gerganov and contributors.
+- **Qwen2.5-Coder**: Developed by Alibaba Cloud / Qwen Team. Licensed under the Apache License 2.0.
+- Additional dependencies and full legal notices are listed in [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt).
+
+### Trademark Disclaimer
+- "Qwen" is a trademark of Alibaba Cloud.
+- "llama.cpp" is maintained by Georgi Gerganov and the llama.cpp open-source community.
+- All other trademarks, service marks, and company names are the property of their respective owners.
+- ReflexGate is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Alibaba Cloud or the llama.cpp maintainers.
 
 ---
 
