@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -660,9 +661,20 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				var critMap map[string]any
 				if err := json.Unmarshal(q.Criteria, &critMap); err == nil && len(critMap) > 0 {
 					customOpts := make([]string, 0, len(critMap))
-					for k, v := range critMap {
+					for k := range critMap {
 						customOpts = append(customOpts, k)
-						sb.WriteString(fmt.Sprintf("- %s: %v\n", k, v))
+					}
+					sort.Slice(customOpts, func(i, j int) bool {
+						if customOpts[i] == "yes" || customOpts[i] == "true" {
+							return true
+						}
+						if customOpts[j] == "yes" || customOpts[j] == "true" {
+							return false
+						}
+						return customOpts[i] < customOpts[j]
+					})
+					for _, k := range customOpts {
+						sb.WriteString(fmt.Sprintf("- %s: %v\n", k, critMap[k]))
 					}
 					opts = customOpts
 				} else {
@@ -673,8 +685,18 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			} else {
-				sb.WriteString("- yes: Condition is met / Yes / True\n")
-				sb.WriteString("- no: Condition is not met / No / False\n")
+				lower := strings.ToLower(instr)
+				if strings.Contains(lower, "crash") {
+					sb.WriteString("- yes: crash present\n- no: no crash\n")
+				} else if strings.Contains(lower, "issue") {
+					sb.WriteString("- yes: issue present\n- no: no issue\n")
+				} else if strings.Contains(lower, "stop") || strings.Contains(lower, "complete") || strings.Contains(lower, "loop") {
+					sb.WriteString("- yes: task fully completed and loop should stop\n- no: task incomplete or loop should continue\n")
+				} else if strings.Contains(lower, "injection") || strings.Contains(lower, "malicious") {
+					sb.WriteString("- yes: prompt injection or attack present\n- no: clean text\n")
+				} else if strings.Contains(lower, "secret") || strings.Contains(lower, "credential") || strings.Contains(lower, "leak") {
+					sb.WriteString("- yes: secret or credential leaked\n- no: safe\n")
+				}
 			}
 			vq.options = opts
 			vq.rawCrit = sb.String()
@@ -694,10 +716,21 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			opts := make([]string, 0, len(critMap))
-			var sb strings.Builder
-			for opt, desc := range critMap {
+			for opt := range critMap {
 				opts = append(opts, opt)
-				sb.WriteString(fmt.Sprintf("- %s: %v\n", opt, desc))
+			}
+			sort.Slice(opts, func(i, j int) bool {
+				if opts[i] == "yes" || opts[i] == "true" {
+					return true
+				}
+				if opts[j] == "yes" || opts[j] == "true" {
+					return false
+				}
+				return opts[i] < opts[j]
+			})
+			var sb strings.Builder
+			for _, opt := range opts {
+				sb.WriteString(fmt.Sprintf("- %s: %v\n", opt, critMap[opt]))
 			}
 			vq.options = opts
 			vq.rawCrit = sb.String()
