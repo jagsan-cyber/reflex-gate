@@ -38,9 +38,9 @@ When autonomous coding agents run in iterative loops, evaluating stop conditions
 
 ## 🚀 Instant Quick Start (Prebuilt Binary)
 
-The repository includes a ready-to-run Windows executable: **[`reflexgate.exe`](reflexgate.exe)** (12.3 MB).
+Download the ready-to-run Windows executable from **[GitHub Releases](https://github.com/jagsan-cyber/reflex-gate/releases/latest)** (`reflexgate.exe`).
 
-1. Clone or download [`reflexgate.exe`](reflexgate.exe).
+1. Download **`reflexgate.exe`** from the [Latest Release](https://github.com/jagsan-cyber/reflex-gate/releases/latest).
 2. Double-click **`reflexgate.exe`** to launch the GUI.
 3. Click **「バイナリ & モデル自動取得」 (Auto Fetch)**:
    - Downloads `qwen2.5-coder-1.5b-instruct-q8_0.gguf` (persisted in `models/`).

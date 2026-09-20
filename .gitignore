@@ -26,7 +26,9 @@ results/
 .DS_Store
 Thumbs.db
 
-# Executables (ignore obsolete/temp binaries, keep primary release reflexgate.exe)
+# Executables (配布は GitHub Releases)
+*.exe
+reflexgate.exe
 local-jev*.exe
 go/*.exe
 jevapi.exe
