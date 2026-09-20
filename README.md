@@ -136,10 +136,9 @@ Response:
 
 ### Build Command
 ```bash
-cd go
 wails build
 ```
-The resulting standalone executable will be generated at `go/build/bin/reflexgate.exe`.
+The resulting standalone executable will be generated at `build/bin/reflexgate.exe`.
 
 ---
 
