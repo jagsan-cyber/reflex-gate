@@ -26,7 +26,10 @@ var reSecretTokens = regexp.MustCompile(`(?i)(` +
 	`gho_[A-Za-z0-9_]{20,}|` + // GitHub OAuth Token
 	`AKIA[0-9A-Z]{16}|` + // AWS Access Key ID
 	`sk-[A-Za-z0-9_-]{20,}|` + // OpenAI / Generic API Secret Key
-	`-----BEGIN (?:[A-Z0-9_-]+ )?PRIVATE KEY-----` + // SSH / TLS private key
+	`-----BEGIN (?:[A-Z0-9_-]+ )?PRIVATE KEY-----|` + // SSH / TLS private key
+	`(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*['"]?[A-Za-z0-9/+=]{30,}['"]?|` + // AWS Secret Access Key
+	`(?:api_key|apikey|secret_key|secretkey|access_token|auth_token|client_secret)\s*[:=]\s*['"]?[A-Za-z0-9/+=_-]{16,}['"]?|` + // Generic API/Secret Key env
+	`bearer\s+[A-Za-z0-9._-]{20,}` + // Bearer token
 `)`)
 
 //go:embed embed/demo.html

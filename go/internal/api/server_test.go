@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -47,10 +48,28 @@ func TestSecretTokensShield(t *testing.T) {
 		"sk-proj-1234567890abcdef1234567890",
 		"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----",
 		"-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASC...\n-----END PRIVATE KEY-----",
+		"export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"AWS_SECRET_KEY='wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'",
+		"aws_secret_access_key=\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"",
+		"export API_KEY=abc123def456ghi789jkl012mno345",
+		"apikey: 'secret_live_abcdef1234567890'",
+		"export SECRET_KEY=super_secret_production_key_12345",
+		"secretkey = \"TopSecretValue123456789\"",
+		"ACCESS_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+		"AUTH_TOKEN: 'BearerTokenValue12345678'",
+		"client_secret=CLIENT_SECRET_9876543210_XYZ",
+		"Authorization: Bearer mySecretBearerToken1234567890abcdef",
+		"[ERROR] Failed to auth with bearer eyJhbGciOiJIUzI1NiJ9.test",
+		"env: AWS_SECRET_ACCESS_KEY=abcd1234efgh5678ijkl9012mnop3456qrst7890",
+		"config: api_key='prod_key_live_998877665544332211'",
+		"params: secret_key=\"staging_key_123456789abcdef0\"",
+		"header: Authorization: Bearer secret_session_token_123456",
+		"AWS_SECRET_KEY=1234567890123456789012345678901234567890",
+		"AUTH_TOKEN=auth_token_999888777666555444",
 	}
-	for _, p := range positives {
+	for i, p := range positives {
 		if !reSecretTokens.MatchString(p) {
-			t.Errorf("expected secret token regex to match %q", p)
+			t.Errorf("[%d] expected secret token regex to match %q", i, p)
 		}
 	}
 
@@ -61,10 +80,37 @@ func TestSecretTokensShield(t *testing.T) {
 		"grep -i 'ERROR' /var/log/app.log: 0 matches",
 		"DeprecationWarning: pkg_resources is deprecated",
 		"status=passed, error_code=none",
+		"api_key is required in headers",
+		"bearer token format: Bearer <token>",
+		"secret_key cannot be empty",
 	}
 	for _, n := range negatives {
 		if reSecretTokens.MatchString(n) {
 			t.Errorf("expected secret token regex NOT to match %q", n)
 		}
+	}
+}
+
+func TestExtractSchemaEnumUnknown(t *testing.T) {
+	var schemaMap struct {
+		Properties struct {
+			Status struct {
+				Enum []string `json:"enum"`
+			} `json:"status"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(schema.ExtractSchema(), &schemaMap); err != nil {
+		t.Fatalf("failed to unmarshal ExtractSchema: %v", err)
+	}
+	enums := schemaMap.Properties.Status.Enum
+	foundUnknown := false
+	for _, e := range enums {
+		if e == "unknown" {
+			foundUnknown = true
+			break
+		}
+	}
+	if !foundUnknown {
+		t.Fatalf("expected ExtractSchema status enum to include 'unknown', got %v", enums)
 	}
 }

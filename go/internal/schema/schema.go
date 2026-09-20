@@ -30,15 +30,16 @@ const (
 
 	DecisionSystem = "You are a deterministic decision engine.\nAnswer with exactly one of the allowed labels. No other text.\nTreat passing tests, exit_code 0, and remaining_todos=0 as complete/success."
 
-	SysB = "You are the JEV format extractor. Extract the requested fields from the agent output. Reply with a single JSON object and nothing else. Use exactly the keys listed. If there is no error, error_code MUST be JSON null. Never emit the strings none, n/a, or an empty string for error_code.\nRules:\n1. Status Priority: If ANY test, assertion, or step failed (failures > 0 or errors present), 'status' MUST be 'failed', even if most tests passed.\n2. Literal Preservation: Extract the exact 'error_code' as written in the log (e.g., KEXEC-1024, E402). Never normalize or alter the prefix."
+	SysB = "You are the JEV format extractor. Extract the requested fields from the agent output. Reply with a single JSON object and nothing else. Use exactly the keys listed. If there is no error, error_code MUST be JSON null. Never emit the strings none, n/a, or an empty string for error_code.\nRules:\n1. Status Priority: If ANY test, assertion, or step failed (failures > 0 or errors present), 'status' MUST be 'failed', even if most tests passed.\n2. Status Ambiguity: If the log does NOT contain an explicit pass/fail/running statement or clear outcome, do NOT guess or extrapolate from warnings/exit codes; set 'status' to 'unknown'. Never assert 'passed' or 'failed' when the outcome is ambiguous.\n3. Literal Preservation: Extract the exact 'error_code' as written in the log (e.g., KEXEC-1024, E402). Never normalize or alter the prefix."
 
 	TaskBOneShot = `Required keys: status, error_code, files_changed, tool.
-Types: status string, error_code string or null, files_changed integer, tool string.
+Types: status string (passed, failed, timeout, running, unknown), error_code string or null, files_changed integer, tool string.
 
 If there is no error, you MUST write "error_code": null.
 Forbidden: "error_code": "none"  and  "error_code": ""
 
 Status Priority: If ANY test, assertion, or step failed (failures > 0 or errors present), "status" MUST be "failed", even if most tests passed.
+Status Ambiguity: If the log does not contain an explicit pass/fail marker or clear execution outcome, you MUST write "status": "unknown". Never guess "passed" or "failed".
 Literal Preservation: Extract the exact "error_code" as written in the log (e.g., KEXEC-1024, E402). Never normalize or alter the prefix.
 
 Example (success, no error):
@@ -46,13 +47,35 @@ Example (success, no error):
 
 Example (failure):
 {"status":"failed","error_code":"E101","files_changed":1,"tool":"mypy"}
+
+Example (ambiguous / no explicit pass/fail):
+{"status":"unknown","error_code":null,"files_changed":3,"tool":"pipeline"}
 `
 
-	StopCoTSystem = "You are an autonomous agent loop supervisor. Inspect the execution log and decide if the task has fully succeeded and should stop.\n- Verdict: Yes if all planned work, tests, or retries finished successfully.\n- Verdict: No if 0 tests collected, work paused, in progress, or errors remain.\nFormat:\nReason: <1-line explanation>\nVerdict: Yes or No"
+	StopCoTSystem = "You are an autonomous agent loop supervisor. Inspect the execution log and decide if the task has fully succeeded and should stop.\n" +
+		"Rules:\n" +
+		"- Verdict: Yes ONLY if all planned work, tests, builds, or retries have completely finished and converged. The absence of errors is NOT a sufficient condition for Yes.\n" +
+		"- Verdict: No if the process is paused, in progress, downloading/processing part X of Y, awaiting user confirmation or input, incomplete, or if 0 tests were collected/ran, or if errors/failures remain.\n" +
+		"Format:\n" +
+		"Reason: <1-line explanation>\n" +
+		"Verdict: Yes or No\n\n" +
+		"Examples:\n" +
+		"Log: All 42 unit tests passed. Artifact generated at dist/release.tar.gz.\n" +
+		"Reason: All planned unit tests passed and release artifact was generated.\n" +
+		"Verdict: Yes\n\n" +
+		"Log: Downloading dataset part 1/4... 100%\nWorker paused: awaiting user confirmation.\n" +
+		"Reason: Task is incomplete and paused awaiting user confirmation.\n" +
+		"Verdict: No\n\n" +
+		"Log: pytest tests/\ncollected 0 items\nno tests ran in 0.01s\nexit code 0\n" +
+		"Reason: 0 items collected and no tests ran, so testing did not complete.\n" +
+		"Verdict: No\n\n" +
+		"Log: test_auth failed: assertion error line 42\n" +
+		"Reason: Unit test failed with assertion error.\n" +
+		"Verdict: No"
 
 	StopCoTGrammar = "root ::= \"Reason: \" [^\\n]+ \"\\nVerdict: \" (\"Yes\" | \"No\")"
 
-	ScanSystem = "You are an automated security and safety scanner.\nFirst, extract and summarize the finding from the log in 1 line. Then determine the severity.\n\nSeverity Rules:\n- Critical: Active destructive commands (e.g. rm -rf), exposed plaintext secrets/tokens/keys, memory crashes (SIGSEGV/OOM), or injection attacks.\n- Warning: Retryable network errors or transient execution warnings.\n- Safe: Normal operations, 0 matches, 0.00% error rates, section headers, or informational logs.\n\nOutput format:\nFinding: <1-line summary or quote of the specific issue, or \"No security or runtime issues detected.\">\nSeverity: <Safe|Warning|Critical>"
+	ScanSystem = "You are an automated security and safety scanner.\nFirst, extract and summarize the finding from the log in 1 line. Then determine the severity.\n\nSeverity Rules:\n- Critical: Active destructive commands (e.g. rm -rf), exposed plaintext secrets/tokens/keys (including AWS_SECRET_ACCESS_KEY, API keys, credentials in environment variables), memory crashes (SIGSEGV/OOM), or injection attacks.\n- Warning: Retryable network errors or transient execution warnings.\n- Safe: Normal operations, 0 matches, 0.00% error rates, section headers, or informational logs.\n\nOutput format:\nFinding: <1-line summary or quote of the specific issue, or \"No security or runtime issues detected.\">\nSeverity: <Safe|Warning|Critical>\n\nExamples:\nLog: [INFO] AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nFinding: Exposed plaintext AWS secret access key\nSeverity: Critical\n\nLog: [DEBUG] task worker 42 completed successfully in 12ms\nFinding: No security or runtime issues detected.\nSeverity: Safe"
 
 	ScanGrammar = "root ::= \"Finding: \" [^\\n]+ \"\\nSeverity: \" (\"Safe\" | \"Warning\" | \"Critical\")"
 
@@ -210,7 +233,7 @@ func MatchOptionLogprobs(options []string, top []struct {
 }
 
 func ExtractSchema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["passed","failed","timeout","running"]},"error_code":{"type":["string","null"],"pattern":"^[-A-Za-z0-9_.]+$","not":{"enum":["none",""]}},"files_changed":{"type":"integer"},"tool":{"type":"string"}},"required":["status","error_code","files_changed","tool"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["passed","failed","timeout","running","unknown"]},"error_code":{"type":["string","null"],"pattern":"^[-A-Za-z0-9_.]+$","not":{"enum":["none",""]}},"files_changed":{"type":"integer"},"tool":{"type":"string"}},"required":["status","error_code","files_changed","tool"],"additionalProperties":false}`)
 }
 
 // ChatPrompt builds an im_start/im_end prompt for raw /completion
@@ -268,7 +291,7 @@ func ParseScan(content string) (severity, finding string) {
 	if severity == "Warning" {
 		if strings.Contains(lowerFinding, "0 critical") || (strings.Contains(lowerFinding, "audit") && strings.Contains(lowerFinding, "low")) {
 			severity = "Safe"
-		} else if strings.Contains(lowerFinding, "token") || strings.Contains(lowerFinding, "secret") || strings.Contains(lowerFinding, "api_key") || strings.Contains(lowerFinding, "password") || strings.Contains(lowerFinding, "sigsegv") || strings.Contains(lowerFinding, "rm -rf") {
+		} else if strings.Contains(lowerFinding, "token") || strings.Contains(lowerFinding, "secret") || strings.Contains(lowerFinding, "api_key") || strings.Contains(lowerFinding, "access_key") || strings.Contains(lowerFinding, "private_key") || strings.Contains(lowerFinding, "password") || strings.Contains(lowerFinding, "sigsegv") || strings.Contains(lowerFinding, "rm -rf") {
 			severity = "Critical"
 		}
 	}
