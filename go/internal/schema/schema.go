@@ -54,8 +54,8 @@ Example (ambiguous / no explicit pass/fail):
 
 	StopCoTSystem = "You are an autonomous agent loop supervisor. Inspect the execution log and decide if the task has fully succeeded and should stop.\n" +
 		"Rules:\n" +
-		"- Verdict: Yes ONLY if all planned work, tests, builds, or retries have completely finished and converged. The absence of errors is NOT a sufficient condition for Yes.\n" +
-		"- Verdict: No if the process is paused, in progress, downloading/processing part X of Y, awaiting user confirmation or input, incomplete, or if 0 tests were collected/ran, or if errors/failures remain.\n" +
+		"- Verdict: Yes if all planned work, tests, builds, or retries have completely finished and converged to final success (e.g. ALL_DONE, passed, exit code 0 with work done). If earlier transient errors or retries occurred but the final attempt succeeded, verdict is Yes.\n" +
+		"- Verdict: No if the process is paused, in progress, downloading/processing part X of Y, awaiting user confirmation or input, incomplete, or if 0 tests were collected/ran, or if unresolved errors/failures remain.\n" +
 		"Format:\n" +
 		"Reason: <1-line explanation>\n" +
 		"Verdict: Yes or No\n\n" +
@@ -63,8 +63,11 @@ Example (ambiguous / no explicit pass/fail):
 		"Log: All 42 unit tests passed. Artifact generated at dist/release.tar.gz.\n" +
 		"Reason: All planned unit tests passed and release artifact was generated.\n" +
 		"Verdict: Yes\n\n" +
+		"Log: Connection error on attempt 1/3. Retrying attempt 3/3...\nConnected. 174 items processed successfully. Status: ALL_DONE.\n" +
+		"Reason: Retried after connection error, reconnected, and finished processing 174 items to ALL_DONE.\n" +
+		"Verdict: Yes\n\n" +
 		"Log: Downloading dataset part 1/4... 100%\nWorker paused: awaiting user confirmation.\n" +
-		"Reason: Task is incomplete and paused awaiting user confirmation.\n" +
+		"Reason: Dataset download is only at part 1/4 and worker is paused awaiting user confirmation.\n" +
 		"Verdict: No\n\n" +
 		"Log: pytest tests/\ncollected 0 items\nno tests ran in 0.01s\nexit code 0\n" +
 		"Reason: 0 items collected and no tests ran, so testing did not complete.\n" +

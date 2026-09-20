@@ -33,6 +33,11 @@ func TestParseCoT(t *testing.T) {
 			wantVerdict: "Yes",
 		},
 		{
+			input:       "Reason: Retried after connection error, reconnected, and finished processing 174 items to ALL_DONE.\nVerdict: Yes",
+			wantReason:  "Retried after connection error, reconnected, and finished processing 174 items to ALL_DONE.",
+			wantVerdict: "Yes",
+		},
+		{
 			input:       "Yes",
 			wantReason:  "Yes",
 			wantVerdict: "Yes",
