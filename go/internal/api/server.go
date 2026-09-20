@@ -555,27 +555,6 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				pPositive = p
 			} else if p, ok := dist["True"]; ok {
 				pPositive = p
-			} else {
-				for k, v := range dist {
-					lk := strings.ToLower(strings.TrimSpace(k))
-					if lk == "yes" || lk == "true" {
-						pPositive = v
-						break
-					}
-				}
-			}
-			if pPositive == 0.0 && (strings.EqualFold(result, "yes") || strings.EqualFold(result, "true")) {
-				if cP, ok := dist[result]; ok && cP > 0 {
-					pPositive = cP
-				} else {
-					pPositive = 0.95
-				}
-			}
-			if pPositive < 0 {
-				pPositive = 0
-			}
-			if pPositive > 1 {
-				pPositive = 1
 			}
 			noulVal := math.Round(pPositive*100) / 100
 
@@ -842,27 +821,6 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 					pPositive = p
 				} else if p, ok := dist["True"]; ok {
 					pPositive = p
-				} else {
-					for k, v := range dist {
-						lk := strings.ToLower(strings.TrimSpace(k))
-						if lk == "yes" || lk == "true" {
-							pPositive = v
-							break
-						}
-					}
-				}
-				if pPositive == 0.0 && (strings.EqualFold(choice, "yes") || strings.EqualFold(choice, "true")) {
-					if cP, ok := dist[choice]; ok && cP > 0 {
-						pPositive = cP
-					} else {
-						pPositive = 0.95
-					}
-				}
-				if pPositive < 0 {
-					pPositive = 0
-				}
-				if pPositive > 1 {
-					pPositive = 1
 				}
 				noulVal := math.Round(pPositive*100) / 100
 				ans["noul"] = noulVal

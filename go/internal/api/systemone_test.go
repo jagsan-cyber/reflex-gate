@@ -708,22 +708,23 @@ func TestSystemOneNoulViaChoice(t *testing.T) {
 		}
 	})
 
-	t.Run("ParityAndNoSigmoid_0.34", func(t *testing.T) {
-		// Verify parity between noul and choice positive prob on identical input,
-		// and guarantee raw probability 0.34 does NOT pass through temperature/sigmoid.
+	t.Run("ParityAndDirectAssignment_0.69", func(t *testing.T) {
+		// Verify exact parity between noul and choice positive prob on identical input,
+		// fixed to choice probability 0.69, proving direct assignment without compression.
+		pRaw := 0.69
 		mockLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"choices": []map[string]any{
 					{
-						"message": map[string]any{"role": "assistant", "content": "no"},
+						"message": map[string]any{"role": "assistant", "content": "yes"},
 						"logprobs": map[string]any{
 							"content": []map[string]any{
 								{
-									"token": "no", "logprob": math.Log(0.66),
+									"token": "yes", "logprob": math.Log(pRaw),
 									"top_logprobs": []map[string]any{
-										{"token": "no", "logprob": math.Log(0.66)},
-										{"token": "yes", "logprob": math.Log(0.34)},
+										{"token": "yes", "logprob": math.Log(pRaw)},
+										{"token": "no", "logprob": math.Log(1.0 - pRaw)},
 									},
 								},
 							},
@@ -795,18 +796,20 @@ func TestSystemOneNoulViaChoice(t *testing.T) {
 			t.Errorf("noul out of range [0.0, 1.0]: %f", *noulAns.Noul)
 		}
 
-		// 2. Parity check: noul matches choice probabilities["yes"] within rounding precision
+		// 2. Choice probability must be 0.69
 		choiceYesProb := choiceAns.Probabilities["yes"]
-		if math.Abs(*noulAns.Noul-choiceYesProb) > 0.01 {
-			t.Errorf("parity mismatch: noul=%f, choice[yes]=%f", *noulAns.Noul, choiceYesProb)
+		if choiceYesProb != 0.69 {
+			t.Errorf("expected choice[yes] to be 0.69, got %f", choiceYesProb)
 		}
 
-		// 3. No sigmoid/temperature scaling check:
-		// Raw prob is 0.34. If sigmoid with T=0.2 were applied, deltaZ = ln(0.34)-ln(0.66) = -0.6633,
-		// scaled = -3.3165 -> 1/(1+exp(3.3165)) = ~0.035.
-		// Direct assignment must yield 0.34 (+- 0.01).
-		if math.Abs(*noulAns.Noul-0.34) > 0.01 {
-			t.Errorf("expected direct unscaled prob ~0.34, got %f (sigmoid distortion detected)", *noulAns.Noul)
+		// 3. Direct assignment check: noul must equal 0.69 exactly (not 0.55-0.57)
+		if *noulAns.Noul != 0.69 {
+			t.Errorf("expected noul to be 0.69, got %f", *noulAns.Noul)
+		}
+
+		// 4. Exact parity check: noul completely matches choice probabilities["yes"]
+		if *noulAns.Noul != choiceYesProb {
+			t.Errorf("exact parity mismatch: noul=%f != choice[yes]=%f", *noulAns.Noul, choiceYesProb)
 		}
 	})
 
