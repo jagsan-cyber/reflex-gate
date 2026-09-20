@@ -155,6 +155,68 @@ Tested with production-grade adversarial trap logs generated across 13 distinct 
 
 ---
 
+## ⚡ Performance
+
+Measured over 120 requests (40 per endpoint) using the built-in Self-Test Suite,
+adversarial trap patterns included.
+
+| Metric | `/jev/stop` | `/jev/extract` | `/jev/scan` |
+|---|---:|---:|---:|
+| Avg latency | 0.35s | 0.43s | 0.29s |
+| Median latency | 0.30s | 0.41s | 0.29s |
+| Max latency | 1.70s | 1.86s | 1.72s |
+
+| Metric | Value |
+|---|---|
+| Decode speed (avg) | ~105 tok/s (76-140 tok/s range) |
+| TTFT (median) | ~25ms |
+| TTFT (worst-case, cold slot) | ~1.4s |
+| Avg completion length | ~30 tokens |
+
+> **Test environment:** AMD Radeon RX 9070 via Vulkan / ROCm backend,
+> `qwen2.5-coder-1.5b-instruct-q8_0.gguf`, context length 8,192.
+> Latency and throughput scale with your GPU/backend - results on CPU-only
+> or lower-end integrated GPUs will be slower. Run the built-in Self-Test
+> Suite on your own hardware to get numbers specific to your setup.
+
+**Why this matters:** at sub-second latency and zero per-call token cost,
+gating an agent loop through ReflexGate on every iteration adds negligible
+overhead compared to a single cloud LLM call.
+
+---
+
+## 💾 Resource Requirements
+
+| Resource | Requirement |
+|---|---|
+| VRAM (GPU backends) | ~2GB at max context (8,192 tokens) |
+| RAM (CPU fallback) | ~4GB |
+| Disk (model + binary) | ~2GB (downloaded on first run, kept for offline use) |
+| OS | Windows 10/11 (x64) |
+
+---
+
+## 🔒 Privacy & Offline Guarantee
+
+- After the initial model/binary download, ReflexGate makes **no outbound
+  network requests**. All log content sent to `/jev/stop`, `/jev/extract`,
+  and `/jev/scan` is processed entirely on your machine.
+- This matters especially for `/jev/scan`, which is designed to inspect logs
+  that may contain secrets or sensitive data - nothing leaves your device.
+
+---
+
+## ⚠️ Known Limitations
+
+- Windows-only (Wails v2 + WebView2). No macOS/Linux build yet.
+- Benchmarked primarily on AMD Radeon RX 9070 (Vulkan / ROCm); other
+  backend/GPU combinations are supported but less thoroughly verified.
+- Effective context length may be capped below the configured value
+  depending on model metadata - the GUI's context usage gauge will warn
+  you if this happens.
+
+---
+
 ## 📄 License
 
 MIT License. See [LICENSE](LICENSE) for details.
