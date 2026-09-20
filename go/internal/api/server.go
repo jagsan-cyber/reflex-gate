@@ -698,7 +698,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 					sb.WriteString("- yes: secret or credential leaked\n- no: safe\n")
 				} else if strings.Contains(instr, "人間") || strings.Contains(instr, "担当者") || strings.Contains(lower, "human") ||
 					strings.Contains(instr, "返金") || strings.Contains(lower, "refund") || strings.Contains(lower, "escalat") || strings.Contains(instr, "苦情") {
-					sb.WriteString("- yes: yes, customer refund request or complaint requires human intervention\n- no: no, automated resolution or no human intervention needed\n")
+					sb.WriteString("- yes: refund requested, billed twice, or unanswered for 3 days; requires human agent\n- no: resolved or no human agent needed\n")
 				}
 			}
 			vq.options = opts
