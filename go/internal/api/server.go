@@ -533,7 +533,7 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 		opts := legacyCheck.Options
 		if len(opts) == 0 {
 			if legacyCheck.Type == "noul" {
-				opts = []string{"true", "false"}
+				opts = []string{"yes", "no"}
 			} else {
 				writeJSON(w, 422, map[string]string{"detail": "choice requires options"})
 				return
