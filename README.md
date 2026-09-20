@@ -232,8 +232,11 @@ ReflexGate coordinates and runs local third-party models and inference engines:
 ### Trademark Disclaimer
 - "Qwen" is a trademark of Alibaba Cloud.
 - "llama.cpp" is maintained by Georgi Gerganov and the llama.cpp open-source community.
+- "Jev" and "JEV" may be trademarks of TypeSafe AI or their respective owners.
+- ReflexGate is an independent, unofficial open-source project and is not affiliated with, endorsed by, or sponsored by TypeSafe AI.
+- Any use of "jev" in API paths (for example `/jev/stop`, `/jev/extract`, `/jev/scan`) or documentation is for interoperability / compatibility description only and does not imply any official relationship.
 - All other trademarks, service marks, and company names are the property of their respective owners.
-- ReflexGate is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Alibaba Cloud or the llama.cpp maintainers.
+- ReflexGate is not affiliated with, endorsed by, or sponsored by Alibaba Cloud or the llama.cpp maintainers.
 
 ---
 
