@@ -5,8 +5,58 @@ package proc
 import (
 	"os"
 	"os/exec"
+	"strconv"
+	"sync"
 	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
+
+var (
+	jobOnce   sync.Once
+	jobHandle windows.Handle
+)
+
+func getJobObject() windows.Handle {
+	jobOnce.Do(func() {
+		job, err := windows.CreateJobObject(nil, nil)
+		if err != nil {
+			return
+		}
+		info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
+			BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
+				LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+			},
+		}
+		_, err = windows.SetInformationJobObject(
+			job,
+			windows.JobObjectExtendedLimitInformation,
+			uintptr(unsafe.Pointer(&info)),
+			uint32(unsafe.Sizeof(info)),
+		)
+		if err == nil {
+			jobHandle = job
+		}
+	})
+	return jobHandle
+}
+
+func bindProcessToJob(pid int) {
+	if pid <= 0 {
+		return
+	}
+	job := getJobObject()
+	if job == 0 {
+		return
+	}
+	hProcess, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return
+	}
+	defer windows.CloseHandle(hProcess)
+	_ = windows.AssignProcessToJobObject(job, hProcess)
+}
 
 func prepare(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -41,8 +91,15 @@ func prepare(cmd *exec.Cmd) {
 }
 
 func killTree(cmd *exec.Cmd) {
-	if cmd.Process == nil {
+	if cmd == nil || cmd.Process == nil {
 		return
+	}
+	pid := cmd.Process.Pid
+	if pid > 0 {
+		// Forcibly kill process and all descendants via taskkill
+		killCmd := exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(pid))
+		killCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		_ = killCmd.Run()
 	}
 	_ = cmd.Process.Kill()
 }

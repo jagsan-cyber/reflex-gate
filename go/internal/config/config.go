@@ -21,12 +21,32 @@ type Config struct {
 	APIKey      string `json:"api_key"`
 }
 
-func Path() string {
+func PrimaryPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "reflexgate.json"
+	}
+	return filepath.Join(filepath.Dir(exe), "reflexgate.json")
+}
+
+func LegacyPath() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return "config.json"
 	}
 	return filepath.Join(filepath.Dir(exe), "config.json")
+}
+
+func Path() string {
+	p := PrimaryPath()
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	leg := LegacyPath()
+	if _, err := os.Stat(leg); err == nil {
+		return leg
+	}
+	return p
 }
 
 func DataDir() string {
@@ -74,5 +94,6 @@ func (c Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(Path(), b, 0o644)
+	_ = os.WriteFile(LegacyPath(), b, 0o644)
+	return os.WriteFile(PrimaryPath(), b, 0o644)
 }

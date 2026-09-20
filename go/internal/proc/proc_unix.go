@@ -7,12 +7,14 @@ import (
 	"syscall"
 )
 
+func bindProcessToJob(pid int) {}
+
 func prepare(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
 func killTree(cmd *exec.Cmd) {
-	if cmd.Process == nil {
+	if cmd == nil || cmd.Process == nil {
 		return
 	}
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)

@@ -12,10 +12,39 @@ import (
 )
 
 const (
-	GGUFURL    = "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q8_0.gguf?download=true"
-	GGUFName   = "qwen2.5-coder-1.5b-instruct-q8_0.gguf"
-	ReleaseAPI = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5"
+	GGUFURL     = "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q8_0.gguf?download=true"
+	GGUFName    = "qwen2.5-coder-1.5b-instruct-q8_0.gguf"
+	ReleaseAPI  = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5"
+	FallbackTag = "b11059"
 )
+
+var fallbackURLs = map[string]struct {
+	ZipURL    string
+	CudartURL string
+}{
+	"vulkan": {
+		ZipURL: "https://github.com/ggml-org/llama.cpp/releases/download/b11059/llama-b11059-bin-win-vulkan-x64.zip",
+	},
+	"cuda": {
+		ZipURL:    "https://github.com/ggml-org/llama.cpp/releases/download/b11059/llama-b11059-bin-win-cuda-12.4-x64.zip",
+		CudartURL: "https://github.com/ggml-org/llama.cpp/releases/download/b11059/cudart-llama-bin-win-cuda-12.4-x64.zip",
+	},
+	"hip": {
+		ZipURL: "https://github.com/ggml-org/llama.cpp/releases/download/b11059/llama-b11059-bin-win-rocm-10.0-x64.zip",
+	},
+	"rocm": {
+		ZipURL: "https://github.com/ggml-org/llama.cpp/releases/download/b11059/llama-b11059-bin-win-rocm-10.0-x64.zip",
+	},
+	"sycl": {
+		ZipURL: "https://github.com/ggml-org/llama.cpp/releases/download/b11059/llama-b11059-bin-win-sycl-x64.zip",
+	},
+	"intel": {
+		ZipURL: "https://github.com/ggml-org/llama.cpp/releases/download/b11059/llama-b11059-bin-win-sycl-x64.zip",
+	},
+	"cpu": {
+		ZipURL: "https://github.com/ggml-org/llama.cpp/releases/download/b11059/llama-b11059-bin-win-cpu-x64.zip",
+	},
+}
 
 type Progress func(label string, done, total int64)
 
@@ -100,18 +129,32 @@ func FetchAll(baseDir, backend string, prog Progress) (llamaExe, modelPath strin
 	return
 }
 
+func getFallbackLlamaZipURL(flavor string) (string, string, error) {
+	norm := strings.ToLower(flavor)
+	if norm == "" || norm == "auto" {
+		norm = "vulkan"
+	}
+	if fb, ok := fallbackURLs[norm]; ok {
+		return fb.ZipURL, fb.CudartURL, nil
+	}
+	if fb, ok := fallbackURLs["vulkan"]; ok {
+		return fb.ZipURL, fb.CudartURL, nil
+	}
+	return "", "", fmt.Errorf("no fallback available for backend %s", flavor)
+}
+
 func latestLlamaZipURL(flavor string) (zipURL string, cudartURL string, err error) {
 	req, _ := http.NewRequest(http.MethodGet, ReleaseAPI, nil)
-	req.Header.Set("User-Agent", "local-jev")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", "", err
+	req.Header.Set("User-Agent", "ReflexGate-Downloader/1.0")
+	resp, reqErr := http.DefaultClient.Do(req)
+	if reqErr != nil || resp.StatusCode >= 400 {
+		// If GitHub API rate limits or network issues occur, use permanent fallback
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return getFallbackLlamaZipURL(flavor)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
-		return "", "", fmt.Errorf("github HTTP %d: %s", resp.StatusCode, b)
-	}
 
 	var releases []struct {
 		TagName    string `json:"tag_name"`
@@ -123,7 +166,7 @@ func latestLlamaZipURL(flavor string) (zipURL string, cudartURL string, err erro
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return "", "", err
+		return getFallbackLlamaZipURL(flavor)
 	}
 
 	var bestAssets []struct {
@@ -138,7 +181,7 @@ func latestLlamaZipURL(flavor string) (zipURL string, cudartURL string, err erro
 	}
 
 	if len(bestAssets) == 0 {
-		return "", "", fmt.Errorf("no releases found on llama.cpp repository")
+		return getFallbackLlamaZipURL(flavor)
 	}
 
 	var vulkan, cuda12, cudart, rocm, sycl, cpu string
@@ -203,12 +246,12 @@ func latestLlamaZipURL(flavor string) (zipURL string, cudartURL string, err erro
 		}
 	}
 
-	return "", "", fmt.Errorf("no matching Windows llama-server zip found for backend %q", flavor)
+	return getFallbackLlamaZipURL(flavor)
 }
 
 func fetchFile(url, dest string, prog func(done, total int64)) error {
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("User-Agent", "local-jev")
+	req.Header.Set("User-Agent", "ReflexGate-Downloader/1.0")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

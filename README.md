@@ -1,85 +1,169 @@
-# local-jev
+# ReflexGate
 
-A tiny **Judge / Evaluator / Verifier** HTTP API for local agent loops.
+<div align="center">
 
-The schema lives on the server. Callers send a log. The API returns a structured verdict.
+**Ultra-Fast, Resilient Local AI Gateway for Autonomous Agent Loops**
 
-- `/jev/stop` -> Yes/No loop-exit gate (local LLM + 1-line CoT + GBNF)
-- `/jev/extract` -> tool-argument JSON (local LLM + JSON Schema)
-- `/jev/scan` -> security / safety scanner (Hybrid: <1ms regex secret shield + LLM semantic scanner)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20ReflexGate-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/fallout_tokyo)
+![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)
+![Wails v2](https://img.shields.io/badge/Wails-v2.16-DF0000?style=for-the-badge)
+![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-00FF88.svg?style=for-the-badge)
 
-Designed for a compact local model such as `Qwen2.5-Coder-1.5B-Instruct` in front of [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server`.
+</div>
 
-## Benchmark Results: 100.0% (111/111 Pass)
+---
 
-Evaluated across 39 distinct test cases x 3 passes (111 total evaluations) spanning subtle reasoning, schema extraction, and semantic safety scanning:
+## ☕ Support the Project / 開発支援・寄付
 
-### Accuracy Progression
+ReflexGate is an open-source project created to drastically accelerate and stabilize local AI agent execution loops with zero token costs and minimal latency.
 
-| Run | Score | Key Milestone |
-|---|---|---|
-| 1 | 89.2% | Initial baseline |
-| 2 | 91.9% | Schema loosen & token length extension |
-| 3 | 86.5% | Anti-hallucination hedging fluctuation |
-| 4 | 94.6% | Finding-first CoT for Task C |
-| 5 | 97.3% | Context protection & status priority tuning |
-| 6 | **100.0% (111/111)** | **Hybrid Secret Shield (C-C4 resolved, zero hallucination)** |
+If ReflexGate helped speed up your local agent workflows, saved your API token expenses, or streamlined your LLM pipeline, please consider buying a coffee to support continued development and maintenance!
 
-### Performance Metrics (p50 Latency & Throughput)
+**👉 Support on Ko-fi: [https://ko-fi.com/fallout_tokyo](https://ko-fi.com/fallout_tokyo)**
 
-| Metric | Previous (Run 5) | Final (Run 6) |
-|---|---|---|
-| Stop p50 | 0.68s | **0.65s** |
-| Extract p50 | 1.18s | **1.14s** |
-| Scan p50 | 0.59s | **0.58s** |
-| TTFT p50 | 66ms | **65ms** |
-| Decode Speed | 37.7 tok/s | **38.7 tok/s** |
-| Sustained Throughput | 2.5 req/s | **2.4 req/s** (3-slot saturation) |
+> **開発支援のお願い**:
+> ReflexGate は、ローカル環境で自律エージェントのループ制御（判定・抽出・セキュリティ検知）を極小レイテンシ＆ゼロトークンコストで安定稼働させるためのオープンソースプロジェクトです。
+> 今後の継続的な機能強化やローカルLLM最適化のため、Ko-fi での温かいご支援をいただけると大変励みになります！
 
-## Why this split
+---
 
-| Endpoint | Backend | Why |
-|---|---|---|
-| stop | LLM (1-line CoT) | High accuracy on nuanced exits; explains why before outputting Yes/No |
-| extract | LLM + JSON Schema | Strict typed JSON; rejects `"none"` for `null`, preserves literal error codes |
-| scan | Hybrid (Fast-path + LLM) | Regex shields plaintext API keys/PATs in <1ms; LLM semantically detects hidden crashes & prompt injections |
+## ⚡ Overview
 
-Measured on Qwen3.5-0.8B Q8_0, ROCm, **KV cache f16/f16** (not turbo3/q8): stop ~0.2s, extract ~0.7s, scan ~0ms.
+When autonomous coding agents run in iterative loops, evaluating stop conditions and extracting error states via large cloud models introduces high latency (2-5s+) and unnecessary token costs.
 
-Do **not** use `--cache-type-v turbo3` for this 0.8B path: long-context scan produced `????`. Do **not** use llama.cpp `--no-cache-prompt` on ROCm for this stack: generation collapsed.
+**ReflexGate** wraps a compact local model (`Qwen2.5-Coder-1.5B-Instruct` on `llama.cpp`) into a dedicated, low-latency (sub-second) local gateway server (`http://127.0.0.1:8090`). It provides a modern Windows Desktop GUI launcher, real-time audio-VU performance telemetry, and 3 high-precision endpoints with 100.0% benchmark accuracy.
 
-## Quick start
+---
 
-1. Run any OpenAI-compatible `llama-server` on port 8080 (Q8_0 or better, KV f16 recommended for 0.8B).
-2. Start the JEV proxy:
+## 🚀 Instant Quick Start (Prebuilt Binary)
 
-```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Unix:    source .venv/bin/activate
-pip install -r requirements.txt
-set JEV_LLM_BASE_URL=http://127.0.0.1:8080/v1
-python jev_api.py
-```
+The repository includes a ready-to-run Windows executable: **[`reflexgate.exe`](reflexgate.exe)** (12.3 MB).
 
-3. Open the inspector: http://127.0.0.1:8090/demo
+1. Clone or download [`reflexgate.exe`](reflexgate.exe).
+2. Double-click **`reflexgate.exe`** to launch the GUI.
+3. Click **「バイナリ & モデル自動取得」 (Auto Fetch)**:
+   - Downloads `qwen2.5-coder-1.5b-instruct-q8_0.gguf` (persisted in `models/`).
+   - Downloads the matched `llama-server.exe` for your hardware (Vulkan / CUDA / ROCm / CPU).
+4. Click **「ReflexGate 起動」 (Start Server)**.
+5. Your local gateway is live at `http://127.0.0.1:8090`!
 
+---
+
+## 🌟 Key Features
+
+- **Modern Cyberpunk Dark Desktop GUI**: Built with Wails v2 + WebView2 + Go.
+- **3 Core Agent Gate Endpoints**:
+  - `POST /jev/stop` -> Intelligent loop-exit gating with 1-line Chain-of-Thought (CoT) + GBNF grammar.
+  - `POST /jev/extract` -> Tool-argument & status/error-code JSON extraction with strict JSON Schema.
+  - `POST /jev/scan` -> Hybrid safety shield (<1ms regex secret detection + semantic crash & prompt injection scanner).
+- **Built-in Self-Test Suite & Failure Inspector**:
+  - Validates 13 production trap patterns (fake success, retry recovery, secret leaks, subtle crashes, etc.).
+  - Select between Quick (15 cases) and Thorough (100 cases) modes with a graphical failure inspector modal.
+- **Real-Time AI Performance Telemetry**:
+  - Live Audio-VU latency level meter & Oscilloscope waveform canvas.
+  - Real-time Context Usage Gauge (`tokens / context_size (%)`) with automatic model-metadata context clip warning.
+  - 3-Slot parallel monitoring (`SLOT 0`, `SLOT 1`, `SLOT 2`) with active latency and tok/s indicators.
+- **Zero Orphan Process Guarantee (Windows Job Object)**:
+  - `llama-server.exe` is bound to a Windows Kernel Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`).
+  - When ReflexGate exits, is closed, or killed in Task Manager, Windows kernel automatically and instantly terminates `llama-server.exe`.
+- **System Tray Residency**:
+  - Minimizes to the Windows system notification tray.
+  - Context menu for Show/Hide, Start/Stop server, and Exit.
+- **Permanent & Resilient Downloads**:
+  - Once fetched, assets are permanently kept locally for offline use.
+  - Automatic fallback to immutable GitHub release CDN assets (`b11059`) prevents GitHub API rate limit (HTTP 403) failures.
+
+---
+
+## 📡 API Reference
+
+All requests accept a single JSON payload: `{"log": "<string>"}`.
+
+### 1. Loop Exit Gating (`POST /jev/stop`)
 ```bash
 curl -s http://127.0.0.1:8090/jev/stop \
   -H "Content-Type: application/json" \
-  -d "{\"log\":\"pytest: 12 passed\\nexit_code=0\"}"
+  -d '{"log":"pytest: 45 passed in 1.2s\nstatus: ALL_DONE"}'
+```
+Response:
+```json
+{
+  "stop": true,
+  "reason": "All 45 tests passed successfully and status is ALL_DONE."
+}
 ```
 
-Environment: `JEV_LLM_BASE_URL`, `JEV_HOST` (default `0.0.0.0`), `JEV_PORT` (default `8090`).
-
-## Benchmark from another machine
-
+### 2. Status & Error Extraction (`POST /jev/extract`)
 ```bash
-python generate_dataset.py
-python run_bench.py --jev-url http://<host>:8090
-python report.py
+curl -s http://127.0.0.1:8090/jev/extract \
+  -H "Content-Type: application/json" \
+  -d '{"log":"Build failed: E0382 use of moved value `x`"}'
+```
+Response:
+```json
+{
+  "result": {
+    "status": "fail",
+    "error_code": "E0382",
+    "summary": "use of moved value `x`"
+  }
+}
 ```
 
-## License
+### 3. Safety & Crash Scanning (`POST /jev/scan`)
+```bash
+curl -s http://127.0.0.1:8090/jev/scan \
+  -H "Content-Type: application/json" \
+  -d '{"log":"Connecting with sk-proj-abc1234567890..."}'
+```
+Response:
+```json
+{
+  "severity": "secret_leak",
+  "reason": "Plaintext API key leaked in stdout log."
+}
+```
 
-MIT. llama.cpp is a runtime dependency, not bundled here.
+---
+
+## 🛠️ Building from Source
+
+### Prerequisites
+- Go 1.23+
+- Wails CLI v2 (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
+- Node.js (optional, frontend is vanilla HTML/CSS/JS)
+
+### Build Command
+```bash
+cd go
+wails build
+```
+The resulting standalone executable will be generated at `go/build/bin/reflexgate.exe`.
+
+---
+
+## 📊 Benchmark Verification
+
+Tested with production-grade adversarial trap logs generated across 13 distinct generator categories:
+
+| Task | Test Category | Target Metric | Score |
+|---|---|---|---|
+| **Stop** | Fake success, retry recovery, infinite loop, partial progress | Accuracy | **100.0%** |
+| **Extract** | Ambiguous status, error code preservation, null handling | Accuracy | **100.0%** |
+| **Scan** | Secret leakage, silent crash, prompt injection, harmless error words | Accuracy | **100.0%** |
+
+---
+
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+**Created by [fallout_tokyo](https://ko-fi.com/fallout_tokyo)**  
+*Contributions, issues, and feature requests are welcome!*
+
+</div>

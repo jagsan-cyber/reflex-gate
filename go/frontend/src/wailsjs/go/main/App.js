@@ -10,8 +10,16 @@ export function GetInitialState() {
   return window['go']['main']['App']['GetInitialState']();
 }
 
+export function GetVersion() {
+  return window['go']['main']['App']['GetVersion']();
+}
+
 export function OpenDemo() {
   return window['go']['main']['App']['OpenDemo']();
+}
+
+export function RunSelfTest(arg1) {
+  return window['go']['main']['App']['RunSelfTest'](arg1);
 }
 
 export function SaveConfig(arg1) {

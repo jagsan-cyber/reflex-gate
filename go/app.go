@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -20,6 +21,8 @@ import (
 	"local-jev/internal/download"
 	"local-jev/internal/hw"
 	"local-jev/internal/proc"
+	"local-jev/internal/selftest"
+	"local-jev/internal/version"
 )
 
 type HardwareDTO struct {
@@ -46,14 +49,17 @@ type ConfigDTO struct {
 }
 
 type ServerStatusDTO struct {
-	Running       bool   `json:"running"`
-	Starting      bool   `json:"starting"`
-	CPUFallback   bool   `json:"cpu_fallback"`
-	JevPort       int    `json:"jev_port"`
-	Status        string `json:"status"`
-	ActiveBackend string `json:"active_backend"`
-	ActiveDevice  string `json:"active_device"`
-	LastError     string `json:"last_error,omitempty"`
+	Running           bool   `json:"running"`
+	Starting          bool   `json:"starting"`
+	CPUFallback       bool   `json:"cpu_fallback"`
+	JevPort           int    `json:"jev_port"`
+	Status            string `json:"status"`
+	ActiveBackend     string `json:"active_backend"`
+	ActiveDevice      string `json:"active_device"`
+	LastError         string `json:"last_error,omitempty"`
+	ConfiguredContext int    `json:"configured_context"`
+	EffectiveContext  int    `json:"effective_context"`
+	ContextWarning    string `json:"context_warning,omitempty"`
 }
 
 type DownloadProgressDTO struct {
@@ -68,9 +74,11 @@ type DownloadProgressDTO struct {
 }
 
 type InitialState struct {
-	Cfg    ConfigDTO       `json:"cfg"`
-	Hw     HardwareDTO     `json:"hw"`
-	Status ServerStatusDTO `json:"status"`
+	AppName string          `json:"app_name"`
+	Version string          `json:"version"`
+	Cfg     ConfigDTO       `json:"cfg"`
+	Hw      HardwareDTO     `json:"hw"`
+	Status  ServerStatusDTO `json:"status"`
 }
 
 type App struct {
@@ -129,11 +137,22 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
+func (a *App) shutdown(ctx context.Context) {
+	_ = a.StopServer()
+	cleanupTray()
+}
+
+func (a *App) GetVersion() string {
+	return version.Version
+}
+
 func (a *App) GetInitialState() InitialState {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	return InitialState{
+		AppName: version.AppName,
+		Version: version.Version,
 		Cfg: ConfigDTO{
 			LlamaServer: a.cfg.LlamaServer,
 			Model:       a.cfg.Model,
@@ -156,15 +175,40 @@ func (a *App) GetInitialState() InitialState {
 			SummaryEN: a.hw.SummaryEN(),
 		},
 		Status: ServerStatusDTO{
-			Running:       a.apiRunning,
-			Starting:      a.starting,
-			CPUFallback:   a.isCPUFallback,
-			JevPort:       a.cfg.JevPort,
-			Status:        "idle",
-			ActiveBackend: a.activeBackend,
-			ActiveDevice:  a.activeDevice,
+			Running:           a.apiRunning,
+			Starting:          a.starting,
+			CPUFallback:       a.isCPUFallback,
+			JevPort:           a.cfg.JevPort,
+			Status:            "idle",
+			ActiveBackend:     a.activeBackend,
+			ActiveDevice:      a.activeDevice,
+			ConfiguredContext: a.cfg.Context,
+			EffectiveContext:  a.cfg.Context,
 		},
 	}
+}
+
+func (a *App) RunSelfTest(mode string) (selftest.SelfTestResult, error) {
+	a.mu.Lock()
+	if !a.apiRunning {
+		a.mu.Unlock()
+		return selftest.SelfTestResult{}, fmt.Errorf("server is not running")
+	}
+	port := a.cfg.JevPort
+	if port <= 0 {
+		port = 8090
+	}
+	a.mu.Unlock()
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	return selftest.Run(baseURL, mode, func(done, total int, cur string) {
+		runtime.EventsEmit(a.ctx, "selftest-progress", map[string]any{
+			"done":  done,
+			"total": total,
+			"pct":   float64(done) / float64(total) * 100.0,
+			"curr":  cur,
+		})
+	})
 }
 
 func (a *App) SelectLlamaServer() (string, error) {
@@ -457,15 +501,39 @@ func (a *App) StartServer(dto ConfigDTO) error {
 			_ = apiSrv.Start(bindAddr)
 		}()
 
+		// Query effective context from llama-server props
+		effectiveCtx := opts.Context
+		var ctxWarning string
+		propClient := &http.Client{Timeout: 2 * time.Second}
+		if pResp, pErr := propClient.Get(fmt.Sprintf("http://127.0.0.1:%d/props", opts.LlamaPort)); pErr == nil {
+			var props struct {
+				DefaultGenSettings struct {
+					NCtx int `json:"n_ctx"`
+				} `json:"default_generation_settings"`
+			}
+			if json.NewDecoder(pResp.Body).Decode(&props) == nil && props.DefaultGenSettings.NCtx > 0 {
+				effectiveCtx = props.DefaultGenSettings.NCtx
+				if effectiveCtx < opts.Context {
+					ctxWarning = fmt.Sprintf("Context capped by model: configured %d, effective %d", opts.Context, effectiveCtx)
+				}
+			}
+			pResp.Body.Close()
+		}
+
 		runtime.EventsEmit(a.ctx, "status-changed", ServerStatusDTO{
-			Running:       true,
-			Starting:      false,
-			CPUFallback:   isCPUFallback,
-			JevPort:       a.cfg.JevPort,
-			Status:        "running",
-			ActiveBackend: activeBackend,
-			ActiveDevice:  activeDevice,
+			Running:           true,
+			Starting:          false,
+			CPUFallback:       isCPUFallback,
+			JevPort:           a.cfg.JevPort,
+			Status:            "running",
+			ActiveBackend:     activeBackend,
+			ActiveDevice:      activeDevice,
+			ConfiguredContext: opts.Context,
+			EffectiveContext:  effectiveCtx,
+			ContextWarning:    ctxWarning,
 		})
+
+		updateTrayStatus(fmt.Sprintf("ReflexGate (Running: Port %d)", a.cfg.JevPort))
 	}()
 
 	return nil
@@ -492,6 +560,8 @@ func (a *App) StopServer() error {
 		JevPort:  a.cfg.JevPort,
 		Status:   "stopped",
 	})
+
+	updateTrayStatus("ReflexGate (Stopped)")
 	return nil
 }
 

@@ -1,12 +1,32 @@
+# Virtual environments and caches
 .venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
-results/raw.jsonl
-results/meta.json
-server.log
-server.err
+
+# Runtime and local models / binaries
+models/
+bin/
+go/models/
+go/bin/
+build/
+go/build/bin/
+
+# User configs and logs
+config.json
+reflexgate.json
+go/config.json
+go/reflexgate.json
+results/
 *.log
+*.err
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# Executables (ignore obsolete/temp binaries, keep primary release reflexgate.exe)
+local-jev*.exe
+go/*.exe
+jevapi.exe

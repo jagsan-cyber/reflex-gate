@@ -126,6 +126,7 @@ func (r *Runner) Start(llamaExe, model string, opt Options) error {
 		r.lastErr = err.Error()
 		return err
 	}
+	bindProcessToJob(cmd.Process.Pid)
 
 	r.cmd = cmd
 	r.logBuf = logBuf

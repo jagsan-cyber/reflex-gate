@@ -1,14 +1,14 @@
 // ==========================================================================
-// LOCAL-JEV Frontend Application Logic (Wails / WebView2)
+// ReflexGate Frontend Application Logic (Wails / WebView2)
 // ==========================================================================
 
 const i18n = {
   ja: {
-    title: "local-jev ランチャー",
-    subtitle: "Qwen2.5-Coder-1.5B AI Gateway",
+    title: "ReflexGate ランチャー",
+    subtitle: "Qwen2.5-Coder-1.5B Fast AI Gateway",
     serverModelConfig: "サーバー & モデル設定",
     lblLlama: "llama-server.exe のパス",
-    lblModel: "GGUF モデルパス",
+    lblModel: "Qwen2.5-Coder-1.5B GGUF モデル",
     btnBrowse: "参照",
     btnAutoDL: "バイナリ & モデル自動取得",
     execSettings: "実行オプション & ポート",
@@ -17,18 +17,24 @@ const i18n = {
     optCtx32k: "32,768 (最大)",
     lblBackend: "推論バックエンド",
     optBackendAuto: "自動検出 (推奨)",
-    optBackendVulkan: "Vulkan (AMD 860M / Intel / 汎用)",
+    optBackendVulkan: "Vulkan (汎用 GPU / AMD / Intel)",
     optBackendCUDA: "CUDA (NVIDIA RTX / GeForce)",
     optBackendHIP: "ROCm / HIP (AMD Radeon)",
     optBackendSYCL: "Intel SYCL (Arc / Core Ultra)",
     optBackendCPU: "CPU のみ (NGL=0)",
-    lblJevPort: "JEV API ポート",
+    lblJevPort: "ReflexGate API ポート",
     lblLlamaPort: "llama-server ポート",
-    btnStart: "JEV 起動",
+    btnStart: "ReflexGate 起動",
     btnStop: "停止",
     btnDemo: "Webデモを開く",
     btnCopyURL: "URLコピー",
-    quickTest: "クイックテスト実行",
+    quickTest: "精度検証 & クイックテスト",
+    btnTestStop: "Stop 判定",
+    btnTestExtract: "ステータス抽出",
+    btnTestScan: "エラー検知",
+    btnRunSelfTest: "🧪 セルフテスト",
+    btnSelfTestRunning: "🧪 実行中...",
+    lblCtxUsage: "コンテキスト消費量 (直近リクエスト):",
     liveMonitor: "リアルタイム AI パフォーマンス監視",
     lblLatencyMeter: "応答レイテンシ・レベルメーター",
     kpiLatency: "応答レイテンシ",
@@ -38,10 +44,6 @@ const i18n = {
     recentLogs: "リアルタイム推論ログ",
     btnLogCopy: "コピー",
     btnLogClear: "クリア",
-    btnTestStop: "Stop 判定 (CoT)",
-    btnTestExtract: "Diff抽出",
-    btnTestScan: "セマンティック走査",
-    btnTestStress: "⚡ 負荷連打",
     terminalEmpty: "リクエスト履歴がありません。サーバーを起動すると推論ログがリアルタイム表示されます。",
     statusStopped: "停止中",
     statusStarting: "起動処理中...",
@@ -53,14 +55,18 @@ const i18n = {
     msgLogCleared: "ログをクリアしました",
     msgDLDone: "ダウンロードが完了しました",
     msgDLFail: "ダウンロードに失敗しました: ",
-    msgCPUFallbackToast: "GPU初期化に失敗したため、CPUモードにフォールバックしました"
+    msgCPUFallbackToast: "GPU初期化に失敗したため、CPUモードにフォールバックしました",
+    modalSelfTestTitle: "セルフテスト精度検証",
+    noFailures: "誤答はありません。すべてのジェネレーターが正常にパスしました。",
+    btnRerun: "再テスト実行",
+    btnClose: "閉じる"
   },
   en: {
-    title: "local-jev Launcher",
+    title: "ReflexGate Launcher",
     subtitle: "Qwen2.5-Coder-1.5B Fast AI Gateway",
     serverModelConfig: "Server & Model Configuration",
     lblLlama: "Path to llama-server.exe",
-    lblModel: "GGUF Model Path",
+    lblModel: "Qwen2.5-Coder-1.5B GGUF Model",
     btnBrowse: "Browse",
     btnAutoDL: "Auto Fetch Binary & Model",
     execSettings: "Execution Options & Ports",
@@ -69,23 +75,24 @@ const i18n = {
     optCtx32k: "32,768 (Maximum)",
     lblBackend: "Acceleration Backend",
     optBackendAuto: "Auto Detect (Recommended)",
-    optBackendVulkan: "Vulkan (AMD 860M / Intel / Generic)",
+    optBackendVulkan: "Vulkan (Generic GPU / AMD / Intel)",
     optBackendCUDA: "CUDA (NVIDIA RTX / GeForce)",
     optBackendHIP: "ROCm / HIP (AMD Radeon)",
     optBackendSYCL: "Intel SYCL (Arc / Core Ultra)",
     optBackendCPU: "CPU Only (NGL=0)",
-    lblJevPort: "JEV API Port",
+    lblJevPort: "ReflexGate API Port",
     lblLlamaPort: "llama-server Port",
-    btnStart: "Start Server",
+    btnStart: "Start ReflexGate",
     btnStop: "Stop",
     btnDemo: "Open Web Demo",
     btnCopyURL: "Copy URL",
-    quickTest: "Quick Test Suite",
-    btnTestStop: "Stop Check (CoT)",
-    btnTestExtract: "Diff Extract",
-    btnTestScan: "Semantic Scan",
-    btnTestStress: "⚡ Stress Run",
-    terminalEmpty: "No requests yet. Start server to monitor activity.",
+    quickTest: "Accuracy & Quick Test Suite",
+    btnTestStop: "Stop Check",
+    btnTestExtract: "Status Extract",
+    btnTestScan: "Error Scan",
+    btnRunSelfTest: "🧪 Self-Test",
+    btnSelfTestRunning: "🧪 Testing...",
+    lblCtxUsage: "Context Usage (Recent Req):",
     liveMonitor: "Live AI Performance Monitor",
     lblLatencyMeter: "Response Latency Level Meter",
     kpiLatency: "Latency",
@@ -95,6 +102,7 @@ const i18n = {
     recentLogs: "Real-time Telemetry Logs",
     btnLogCopy: "Copy",
     btnLogClear: "Clear",
+    terminalEmpty: "No requests yet. Start server to monitor activity.",
     statusStopped: "STOPPED",
     statusStarting: "STARTING...",
     statusFallbackCPU: "GPU Failed -> Switching to CPU...",
@@ -105,7 +113,11 @@ const i18n = {
     msgLogCleared: "Logs cleared",
     msgDLDone: "Download complete",
     msgDLFail: "Download failed: ",
-    msgCPUFallbackToast: "GPU initialization failed; fell back to CPU mode"
+    msgCPUFallbackToast: "GPU initialization failed; fell back to CPU mode",
+    modalSelfTestTitle: "Self-Test Accuracy Verification",
+    noFailures: "No failures. All test patterns passed successfully.",
+    btnRerun: "Rerun Test",
+    btnClose: "Close"
   }
 };
 
@@ -114,17 +126,21 @@ let currentHwInfo = null;
 let currentStatus = { running: false, starting: false, jev_port: 8090 };
 let latencyHistory = [];
 let totalCallsCount = 0;
-let slot0Timeout = null;
-let slot1Timeout = null;
-let slot2Timeout = null;
+let isSelfTestRunning = false;
+
+// Slot reset timers
+let slotTimeouts = { 0: null, 1: null, 2: null };
 
 // DOM Element References
 const elements = {
+  appVersion: document.getElementById("appVersion"),
   hdrSubtitle: document.getElementById("hdrSubtitle"),
+  hwBadge: document.getElementById("hwBadge"),
   hwText: document.getElementById("hwText"),
   statusPill: document.getElementById("statusPill"),
   statusLabel: document.getElementById("statusLabel"),
   btnLangToggle: document.getElementById("btnLangToggle"),
+  btnKofi: document.getElementById("btnKofi"),
 
   dlBanner: document.getElementById("dlBanner"),
   dlLabel: document.getElementById("dlLabel"),
@@ -172,7 +188,8 @@ const elements = {
   btnTestStop: document.getElementById("btnTestStop"),
   btnTestExtract: document.getElementById("btnTestExtract"),
   btnTestScan: document.getElementById("btnTestScan"),
-  btnTestStress: document.getElementById("btnTestStress"),
+  selectSelfTestMode: document.getElementById("selectSelfTestMode"),
+  btnRunSelfTest: document.getElementById("btnRunSelfTest"),
 
   txtLiveMonitor: document.getElementById("txtLiveMonitor"),
   engineBadge: document.getElementById("engineBadge"),
@@ -196,18 +213,103 @@ const elements = {
   kpiHdrCalls: document.getElementById("kpiHdrCalls"),
   kpiValCalls: document.getElementById("kpiValCalls"),
 
+  lblCtxUsage: document.getElementById("lblCtxUsage"),
+  ctxUsageVal: document.getElementById("ctxUsageVal"),
+  ctxWarnPill: document.getElementById("ctxWarnPill"),
+  ctxWarnText: document.getElementById("ctxWarnText"),
+  ctxGaugeBar: document.getElementById("ctxGaugeBar"),
+
+  slotCard0: document.getElementById("slotCard0"),
+  slot0Task: document.getElementById("slot0Task"),
+  slot0State: document.getElementById("slot0State"),
+  slot0Lat: document.getElementById("slot0Lat"),
+  slot0Toks: document.getElementById("slot0Toks"),
+
+  slotCard1: document.getElementById("slotCard1"),
+  slot1Task: document.getElementById("slot1Task"),
+  slot1State: document.getElementById("slot1State"),
+  slot1Lat: document.getElementById("slot1Lat"),
+  slot1Toks: document.getElementById("slot1Toks"),
+
+  slotCard2: document.getElementById("slotCard2"),
+  slot2Task: document.getElementById("slot2Task"),
+  slot2State: document.getElementById("slot2State"),
+  slot2Lat: document.getElementById("slot2Lat"),
+  slot2Toks: document.getElementById("slot2Toks"),
+
   txtRecentLogs: document.getElementById("txtRecentLogs"),
   btnLogCopy: document.getElementById("btnLogCopy"),
   btnLogClear: document.getElementById("btnLogClear"),
   logTerminal: document.getElementById("logTerminal"),
   terminalEmpty: document.getElementById("terminalEmpty"),
 
+  selfTestModal: document.getElementById("selfTestModal"),
+  modalTitleText: document.getElementById("modalTitleText"),
+  modalAccuracyBadge: document.getElementById("modalAccuracyBadge"),
+  btnCloseSelfTest: document.getElementById("btnCloseSelfTest"),
+  btnCloseSelfTestBtn: document.getElementById("btnCloseSelfTestBtn"),
+  btnRerunSelfTest: document.getElementById("btnRerunSelfTest"),
+  stOverallAcc: document.getElementById("stOverallAcc"),
+  stCaseCount: document.getElementById("stCaseCount"),
+  stAvgLatency: document.getElementById("stAvgLatency"),
+  stAvgSpeed: document.getElementById("stAvgSpeed"),
+  stTableBody: document.getElementById("stTableBody"),
+  stFailCount: document.getElementById("stFailCount"),
+  stFailureList: document.getElementById("stFailureList"),
+
   appToast: document.getElementById("appToast"),
   toastMessage: document.getElementById("toastMessage")
 };
 
 // Canvas 2D Context
-const ctx = elements.waveformCanvas.getContext("2d");
+const ctx = elements.waveformCanvas ? elements.waveformCanvas.getContext("2d") : null;
+
+// ==========================================================================
+// Dynamic Hardware & Backend Summary (Single Source of Truth)
+// ==========================================================================
+function updateHeaderHardwareSummary() {
+  if (!elements.hwText) return;
+  const b = elements.selectBackend ? elements.selectBackend.value : "auto";
+  const lang = currentLang;
+  const rawGpuName = currentHwInfo?.gpu_name || "";
+  const summaryStr = lang === "en" ? (currentHwInfo?.summary_en || "") : (currentHwInfo?.summary || "");
+
+  // If server is actively running, show active backend & active device
+  if (currentStatus && currentStatus.running) {
+    if (currentStatus.cpu_fallback) {
+      elements.hwText.textContent = lang === "en" ? "CPU Fallback (NGL=0)" : "CPU フォールバック (NGL=0)";
+      return;
+    }
+    const be = currentStatus.active_backend || "Vulkan";
+    const dev = currentStatus.active_device ? ` (${currentStatus.active_device})` : "";
+    elements.hwText.textContent = `${be}${dev}`;
+    return;
+  }
+
+  // When stopped / configuring, synthesize from selected backend + detected hardware
+  let text = "";
+  if (b === "cpu") {
+    text = lang === "en" ? "CPU Only (NGL=0)" : "CPU 推論モード (NGL=0)";
+  } else if (b === "cuda") {
+    text = rawGpuName ? `CUDA (${rawGpuName})` : "CUDA (NVIDIA RTX / GeForce)";
+  } else if (b === "vulkan") {
+    text = rawGpuName ? `Vulkan (${rawGpuName})` : "Vulkan (Generic GPU / AMD / Intel)";
+  } else if (b === "hip") {
+    text = rawGpuName ? `ROCm / HIP (${rawGpuName})` : "ROCm / HIP (AMD Radeon)";
+  } else if (b === "sycl") {
+    text = rawGpuName ? `Intel SYCL (${rawGpuName})` : "Intel SYCL (Arc / Core Ultra)";
+  } else {
+    // auto
+    if (rawGpuName) {
+      text = `${lang === "en" ? "Auto Detect" : "自動検出"} (${rawGpuName})`;
+    } else if (summaryStr) {
+      text = summaryStr;
+    } else {
+      text = lang === "en" ? "Hardware ready" : "ハードウェア準備完了";
+    }
+  }
+  elements.hwText.textContent = text;
+}
 
 // ==========================================================================
 // Language and UI Text Updates
@@ -216,18 +318,20 @@ function updateLanguage(lang) {
   currentLang = lang;
   const t = i18n[lang] || i18n.ja;
 
-  elements.hdrSubtitle.textContent = t.subtitle;
-  elements.btnLangToggle.querySelector(".lang-text").textContent = (lang === "en" ? "JA" : "EN");
+  if (elements.hdrSubtitle) elements.hdrSubtitle.textContent = t.subtitle;
+  if (elements.btnLangToggle) {
+    elements.btnLangToggle.querySelector(".lang-text").textContent = (lang === "en" ? "JA" : "EN");
+  }
 
-  elements.txtServerModelConfig.textContent = t.serverModelConfig;
-  elements.lblLlamaServer.textContent = t.lblLlama;
-  elements.btnBrowseLlama.textContent = t.btnBrowse;
-  elements.lblModel.textContent = t.lblModel;
-  elements.btnBrowseModel.textContent = t.btnBrowse;
-  elements.txtAutoDL.textContent = t.btnAutoDL;
+  if (elements.txtServerModelConfig) elements.txtServerModelConfig.textContent = t.serverModelConfig;
+  if (elements.lblLlamaServer) elements.lblLlamaServer.textContent = t.lblLlama;
+  if (elements.btnBrowseLlama) elements.btnBrowseLlama.textContent = t.btnBrowse;
+  if (elements.lblModel) elements.lblModel.textContent = t.lblModel;
+  if (elements.btnBrowseModel) elements.btnBrowseModel.textContent = t.btnBrowse;
+  if (elements.txtAutoDL) elements.txtAutoDL.textContent = t.btnAutoDL;
 
-  elements.txtExecSettings.textContent = t.execSettings;
-  elements.lblContext.textContent = t.lblContext;
+  if (elements.txtExecSettings) elements.txtExecSettings.textContent = t.execSettings;
+  if (elements.lblContext) elements.lblContext.textContent = t.lblContext;
   if (elements.optCtx8k) elements.optCtx8k.textContent = t.optCtx8k;
   if (elements.optCtx32k) elements.optCtx32k.textContent = t.optCtx32k;
   if (elements.lblBackend) elements.lblBackend.textContent = t.lblBackend;
@@ -237,41 +341,44 @@ function updateLanguage(lang) {
   if (elements.optBackendHIP) elements.optBackendHIP.textContent = t.optBackendHIP;
   if (elements.optBackendSYCL) elements.optBackendSYCL.textContent = t.optBackendSYCL;
   if (elements.optBackendCPU) elements.optBackendCPU.textContent = t.optBackendCPU;
-  elements.lblJevPort.textContent = t.lblJevPort;
-  elements.lblLlamaPort.textContent = t.lblLlamaPort;
+  if (elements.lblJevPort) elements.lblJevPort.textContent = t.lblJevPort;
+  if (elements.lblLlamaPort) elements.lblLlamaPort.textContent = t.lblLlamaPort;
 
-  elements.txtStartServer.textContent = t.btnStart;
-  elements.txtStopServer.textContent = t.btnStop;
-  elements.txtOpenDemo.textContent = t.btnDemo;
-  elements.txtCopyURL.textContent = t.btnCopyURL;
+  if (elements.txtStartServer) elements.txtStartServer.textContent = t.btnStart;
+  if (elements.txtStopServer) elements.txtStopServer.textContent = t.btnStop;
+  if (elements.txtOpenDemo) elements.txtOpenDemo.textContent = t.btnDemo;
+  if (elements.txtCopyURL) elements.txtCopyURL.textContent = t.btnCopyURL;
 
-  elements.txtQuickTest.textContent = t.quickTest;
-  elements.txtLiveMonitor.textContent = t.liveMonitor;
-  elements.lblLatencyMeter.textContent = t.lblLatencyMeter;
-
-  elements.kpiHdrLatency.textContent = t.kpiLatency;
-  elements.kpiHdrTTFT.textContent = t.kpiTTFT;
-  elements.kpiHdrSpeed.textContent = t.kpiSpeed;
-  elements.kpiHdrCalls.textContent = t.kpiCalls;
-
-  elements.btnTestStop.textContent = t.btnTestStop;
-  elements.btnTestExtract.textContent = t.btnTestExtract;
-  elements.btnTestScan.textContent = t.btnTestScan;
-  if (elements.btnTestStress && !stressRunning) {
-    elements.btnTestStress.textContent = t.btnTestStress;
+  if (elements.txtQuickTest) elements.txtQuickTest.textContent = t.quickTest;
+  if (elements.btnTestStop) elements.btnTestStop.textContent = t.btnTestStop;
+  if (elements.btnTestExtract) elements.btnTestExtract.textContent = t.btnTestExtract;
+  if (elements.btnTestScan) elements.btnTestScan.textContent = t.btnTestScan;
+  if (elements.btnRunSelfTest && !isSelfTestRunning) {
+    elements.btnRunSelfTest.textContent = t.btnRunSelfTest;
   }
 
-  elements.txtRecentLogs.textContent = t.recentLogs;
-  elements.btnLogCopy.textContent = t.btnLogCopy;
-  elements.btnLogClear.textContent = t.btnLogClear;
+  if (elements.lblCtxUsage) elements.lblCtxUsage.textContent = t.lblCtxUsage;
+  if (elements.txtLiveMonitor) elements.txtLiveMonitor.textContent = t.liveMonitor;
+  if (elements.lblLatencyMeter) elements.lblLatencyMeter.textContent = t.lblLatencyMeter;
+
+  if (elements.kpiHdrLatency) elements.kpiHdrLatency.textContent = t.kpiLatency;
+  if (elements.kpiHdrTTFT) elements.kpiHdrTTFT.textContent = t.kpiTTFT;
+  if (elements.kpiHdrSpeed) elements.kpiHdrSpeed.textContent = t.kpiSpeed;
+  if (elements.kpiHdrCalls) elements.kpiHdrCalls.textContent = t.kpiCalls;
+
+  if (elements.txtRecentLogs) elements.txtRecentLogs.textContent = t.recentLogs;
+  if (elements.btnLogCopy) elements.btnLogCopy.textContent = t.btnLogCopy;
+  if (elements.btnLogClear) elements.btnLogClear.textContent = t.btnLogClear;
 
   if (elements.terminalEmpty) {
     elements.terminalEmpty.textContent = t.terminalEmpty;
   }
 
-  if (currentHwInfo) {
-    elements.hwText.textContent = (lang === "en" ? currentHwInfo.summary_en : currentHwInfo.summary) || "Hardware ready";
-  }
+  if (elements.modalTitleText) elements.modalTitleText.textContent = t.modalSelfTestTitle;
+  if (elements.btnRerunSelfTest) elements.btnRerunSelfTest.textContent = t.btnRerun;
+  if (elements.btnCloseSelfTestBtn) elements.btnCloseSelfTestBtn.textContent = t.btnClose;
+
+  updateHeaderHardwareSummary();
 
   if (currentStatus) {
     updateStatus(currentStatus);
@@ -283,6 +390,7 @@ function updateLanguage(lang) {
 // ==========================================================================
 let toastTimer = null;
 function showToast(msg, duration = 3000) {
+  if (!elements.toastMessage || !elements.appToast) return;
   elements.toastMessage.textContent = msg;
   elements.appToast.classList.remove("hidden");
   if (toastTimer) clearTimeout(toastTimer);
@@ -292,6 +400,7 @@ function showToast(msg, duration = 3000) {
 }
 
 function appendErrorLog(msg) {
+  if (!elements.logTerminal) return;
   if (elements.terminalEmpty) {
     elements.terminalEmpty.remove();
     elements.terminalEmpty = null;
@@ -318,6 +427,7 @@ function appendErrorLog(msg) {
 // Canvas Oscilloscope Waveform Renderer
 // ==========================================================================
 function drawWaveform() {
+  if (!ctx || !elements.waveformCanvas) return;
   const w = elements.waveformCanvas.width;
   const h = elements.waveformCanvas.height;
 
@@ -388,7 +498,7 @@ function drawWaveform() {
     else ctx.lineTo(p.x, p.y);
   });
   ctx.stroke();
-  ctx.shadowBlur = 0; // reset shadow
+  ctx.shadowBlur = 0;
 
   // Draw Dot on Latest Data Point
   const lastPt = points[points.length - 1];
@@ -402,6 +512,40 @@ function drawWaveform() {
 }
 
 // ==========================================================================
+// Slot Activity Update Helper
+// ==========================================================================
+function updateSlotActivity(slotId, task, latMs, tokPerSec) {
+  const slotNum = slotId >= 0 && slotId <= 2 ? slotId : 0;
+  const card = elements[`slotCard${slotNum}`];
+  const taskPill = elements[`slot${slotNum}Task`];
+  const stateBadge = elements[`slot${slotNum}State`];
+  const latEl = elements[`slot${slotNum}Lat`];
+  const toksEl = elements[`slot${slotNum}Toks`];
+  const headerBadge = elements[`slot${slotNum}Badge`];
+
+  if (taskPill) taskPill.textContent = (task || "REQ").toUpperCase();
+  if (latEl) latEl.textContent = `${latMs}ms`;
+  if (toksEl) toksEl.textContent = `${(tokPerSec || 0).toFixed(1)} t/s`;
+
+  if (card) card.classList.add("active");
+  if (stateBadge) {
+    stateBadge.className = "slot-state-badge active";
+    stateBadge.textContent = "ACTIVE";
+  }
+  if (headerBadge) headerBadge.classList.add("active");
+
+  if (slotTimeouts[slotNum]) clearTimeout(slotTimeouts[slotNum]);
+  slotTimeouts[slotNum] = setTimeout(() => {
+    if (card) card.classList.remove("active");
+    if (stateBadge) {
+      stateBadge.className = "slot-state-badge idle";
+      stateBadge.textContent = "IDLE";
+    }
+    if (headerBadge) headerBadge.classList.remove("active");
+  }, 450);
+}
+
+// ==========================================================================
 // Telemetry Updates (Event Driven)
 // ==========================================================================
 function onTelemetry(ev) {
@@ -412,33 +556,35 @@ function onTelemetry(ev) {
   }
 
   // Update KPI displays
-  elements.kpiValLatency.innerHTML = `${ev.LatencyMs} <span class="unit">ms</span>`;
-  elements.kpiValTTFT.innerHTML = `${ev.TTFTMs || 0} <span class="unit">ms</span>`;
-  elements.kpiValSpeed.innerHTML = `${(ev.TokPerSec || 0).toFixed(1)} <span class="unit">t/s</span>`;
-  elements.kpiValCalls.innerHTML = `${totalCallsCount} <span class="unit">reqs</span>`;
+  if (elements.kpiValLatency) elements.kpiValLatency.innerHTML = `${ev.LatencyMs} <span class="unit">ms</span>`;
+  if (elements.kpiValTTFT) elements.kpiValTTFT.innerHTML = `${ev.TTFTMs || 0} <span class="unit">ms</span>`;
+  if (elements.kpiValSpeed) elements.kpiValSpeed.innerHTML = `${(ev.TokPerSec || 0).toFixed(1)} <span class="unit">t/s</span>`;
+  if (elements.kpiValCalls) elements.kpiValCalls.innerHTML = `${totalCallsCount} <span class="unit">reqs</span>`;
 
   // Update Audio-VU Latency Meter Bar
-  elements.meterLatencyText.textContent = `${ev.LatencyMs} ms`;
-  let pct = (ev.LatencyMs / 500.0) * 100.0;
-  pct = Math.min(100.0, Math.max(4.0, pct));
-  elements.meterFill.style.width = `${pct}%`;
-
-  // Update Slot LEDs
-  if (ev.SlotID === 0) {
-    elements.slot0Badge.classList.add("active");
-    if (slot0Timeout) clearTimeout(slot0Timeout);
-    slot0Timeout = setTimeout(() => elements.slot0Badge.classList.remove("active"), 350);
-  } else if (ev.SlotID === 1) {
-    elements.slot1Badge.classList.add("active");
-    if (slot1Timeout) clearTimeout(slot1Timeout);
-    slot1Timeout = setTimeout(() => elements.slot1Badge.classList.remove("active"), 350);
-  } else if (ev.SlotID === 2) {
-    if (elements.slot2Badge) {
-      elements.slot2Badge.classList.add("active");
-      if (slot2Timeout) clearTimeout(slot2Timeout);
-      slot2Timeout = setTimeout(() => elements.slot2Badge.classList.remove("active"), 350);
-    }
+  if (elements.meterLatencyText) elements.meterLatencyText.textContent = `${ev.LatencyMs} ms`;
+  if (elements.meterFill) {
+    let pct = (ev.LatencyMs / 500.0) * 100.0;
+    pct = Math.min(100.0, Math.max(4.0, pct));
+    elements.meterFill.style.width = `${pct}%`;
   }
+
+  // Update Real-time Context Usage Gauge
+  const promptToks = ev.PromptToks || 0;
+  const outToks = ev.OutToks || 0;
+  const reqTokens = promptToks + outToks;
+  const maxCtx = currentStatus?.effective_context || currentStatus?.configured_context || parseInt(elements.selectContext?.value, 10) || 8192;
+  const ctxPct = Math.min(100, Math.round((reqTokens / maxCtx) * 100));
+
+  if (elements.ctxUsageVal) {
+    elements.ctxUsageVal.textContent = `${reqTokens.toLocaleString()} / ${maxCtx.toLocaleString()} (${ctxPct}%)`;
+  }
+  if (elements.ctxGaugeBar) {
+    elements.ctxGaugeBar.style.width = `${ctxPct}%`;
+  }
+
+  // Update Slot Monitoring
+  updateSlotActivity(ev.SlotID, ev.Task, ev.LatencyMs, ev.TokPerSec);
 
   // Draw Waveform
   drawWaveform();
@@ -448,6 +594,7 @@ function onTelemetry(ev) {
 }
 
 function appendLog(ev) {
+  if (!elements.logTerminal) return;
   if (elements.terminalEmpty) {
     elements.terminalEmpty.remove();
     elements.terminalEmpty = null;
@@ -465,17 +612,15 @@ function appendLog(ev) {
 
   elements.logTerminal.appendChild(row);
 
-  // Keep max 50 log rows
   while (elements.logTerminal.children.length > 50) {
     elements.logTerminal.removeChild(elements.logTerminal.firstChild);
   }
-
-  // Auto scroll
   elements.logTerminal.scrollTop = elements.logTerminal.scrollHeight;
 }
 
 function escapeHtml(str) {
-  return str.replace(/[&<>"']/g, m => ({
+  if (!str) return "";
+  return String(str).replace(/[&<>"']/g, m => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[m]));
 }
@@ -521,50 +666,197 @@ function updateStatus(status) {
     }
   }
 
-  elements.statusPill.className = "status-pill";
-  if (status.status === "fallback_cpu") {
-    elements.statusPill.classList.add("starting");
-    elements.statusLabel.textContent = t.statusFallbackCPU;
-    elements.btnStartServer.disabled = true;
-    elements.btnStopServer.disabled = false;
-  } else if (status.starting) {
-    elements.statusPill.classList.add("starting");
-    elements.statusLabel.textContent = t.statusStarting;
-    elements.btnStartServer.disabled = true;
-    elements.btnStopServer.disabled = false;
-  } else if (status.running) {
-    if (status.cpu_fallback) {
-      elements.statusPill.classList.add("cpu-fallback");
-      elements.statusLabel.textContent = t.statusRunningCPU.replace("%d", status.jev_port || 8090);
-      showToast(t.msgCPUFallbackToast);
+  // Context mismatch warning pill
+  if (elements.ctxWarnPill) {
+    if (status.context_warning) {
+      elements.ctxWarnPill.classList.remove("hidden");
+      if (elements.ctxWarnText) elements.ctxWarnText.textContent = status.context_warning;
     } else {
-      elements.statusPill.classList.add("running");
-      const backendTag = status.active_backend ? ` [${status.active_backend}]` : "";
-      elements.statusLabel.textContent = (currentLang === "en" ? `RUNNING${backendTag}: Port ${status.jev_port || 8090}` : `稼働中${backendTag}: Port ${status.jev_port || 8090}`);
-    }
-    elements.btnStartServer.disabled = true;
-    elements.btnStopServer.disabled = false;
-    elements.btnOpenDemo.disabled = false;
-    elements.btnTestStop.disabled = false;
-    elements.btnTestExtract.disabled = false;
-    elements.btnTestScan.disabled = false;
-    if (elements.btnTestStress) elements.btnTestStress.disabled = false;
-  } else {
-    elements.statusLabel.textContent = t.statusStopped;
-    elements.btnStartServer.disabled = false;
-    elements.btnStopServer.disabled = true;
-    elements.btnOpenDemo.disabled = true;
-    elements.btnTestStop.disabled = true;
-    elements.btnTestExtract.disabled = true;
-    elements.btnTestScan.disabled = true;
-    if (elements.btnTestStress) elements.btnTestStress.disabled = true;
-    stopStress();
-
-    if (status.last_error) {
-      showToast(status.last_error, 5000);
-      appendErrorLog(status.last_error);
+      elements.ctxWarnPill.classList.add("hidden");
     }
   }
+
+  // Update Header text
+  updateHeaderHardwareSummary();
+
+  // Status pill & Action buttons
+  if (elements.statusPill && elements.statusLabel) {
+    elements.statusPill.className = "status-pill";
+    if (status.status === "fallback_cpu") {
+      elements.statusPill.classList.add("starting");
+      elements.statusLabel.textContent = t.statusFallbackCPU;
+      elements.btnStartServer.disabled = true;
+      elements.btnStopServer.disabled = false;
+    } else if (status.starting) {
+      elements.statusPill.classList.add("starting");
+      elements.statusLabel.textContent = t.statusStarting;
+      elements.btnStartServer.disabled = true;
+      elements.btnStopServer.disabled = false;
+    } else if (status.running) {
+      if (status.cpu_fallback) {
+        elements.statusPill.classList.add("cpu-fallback");
+        elements.statusLabel.textContent = t.statusRunningCPU.replace("%d", status.jev_port || 8090);
+        showToast(t.msgCPUFallbackToast);
+      } else {
+        elements.statusPill.classList.add("running");
+        const backendTag = status.active_backend ? ` [${status.active_backend}]` : "";
+        elements.statusLabel.textContent = (currentLang === "en" ? `RUNNING${backendTag}: Port ${status.jev_port || 8090}` : `稼働中${backendTag}: Port ${status.jev_port || 8090}`);
+      }
+      elements.btnStartServer.disabled = true;
+      elements.btnStopServer.disabled = false;
+      elements.btnOpenDemo.disabled = false;
+      elements.btnTestStop.disabled = false;
+      elements.btnTestExtract.disabled = false;
+      elements.btnTestScan.disabled = false;
+      if (elements.btnRunSelfTest) elements.btnRunSelfTest.disabled = false;
+    } else {
+      elements.statusLabel.textContent = t.statusStopped;
+      elements.btnStartServer.disabled = false;
+      elements.btnStopServer.disabled = true;
+      elements.btnOpenDemo.disabled = true;
+      elements.btnTestStop.disabled = true;
+      elements.btnTestExtract.disabled = true;
+      elements.btnTestScan.disabled = true;
+      if (elements.btnRunSelfTest) elements.btnRunSelfTest.disabled = true;
+
+      if (status.last_error) {
+        showToast(status.last_error, 5000);
+        appendErrorLog(status.last_error);
+      }
+    }
+  }
+}
+
+// ==========================================================================
+// Self-Test Execution & Modal Management
+// ==========================================================================
+async function runSelfTest() {
+  if (isSelfTestRunning || !currentStatus?.running) return;
+  if (!window.go?.main?.App?.RunSelfTest) return;
+
+  const mode = elements.selectSelfTestMode ? elements.selectSelfTestMode.value : "quick";
+  const t = i18n[currentLang] || i18n.ja;
+
+  isSelfTestRunning = true;
+  if (elements.btnRunSelfTest) {
+    elements.btnRunSelfTest.disabled = true;
+    elements.btnRunSelfTest.textContent = t.btnSelfTestRunning;
+  }
+
+  try {
+    const res = await window.go.main.App.RunSelfTest(mode);
+    renderSelfTestResults(res);
+  } catch (err) {
+    showToast("Self-test error: " + err, 5000);
+    appendErrorLog("Self-test error: " + err);
+  } finally {
+    isSelfTestRunning = false;
+    if (elements.btnRunSelfTest) {
+      elements.btnRunSelfTest.disabled = !currentStatus?.running;
+      elements.btnRunSelfTest.textContent = t.btnRunSelfTest;
+    }
+  }
+}
+
+function renderSelfTestResults(res) {
+  if (!res || !elements.selfTestModal) return;
+
+  const t = i18n[currentLang] || i18n.ja;
+  const accPct = (res.accuracy * 100).toFixed(1);
+
+  // Overall accuracy badge
+  if (elements.modalAccuracyBadge) {
+    if (res.accuracy >= 1.0) {
+      elements.modalAccuracyBadge.className = "modal-badge pass";
+      elements.modalAccuracyBadge.textContent = "100% PASS";
+    } else {
+      elements.modalAccuracyBadge.className = "modal-badge fail";
+      elements.modalAccuracyBadge.textContent = `${accPct}% FAIL`;
+    }
+  }
+
+  // Overview metrics
+  if (elements.stOverallAcc) {
+    elements.stOverallAcc.textContent = `${accPct}%`;
+    elements.stOverallAcc.className = res.accuracy >= 1.0 ? "summary-val green" : "summary-val red";
+  }
+  if (elements.stCaseCount) {
+    elements.stCaseCount.textContent = `${res.passed_count} / ${res.total_count}`;
+  }
+  if (elements.stAvgLatency) {
+    elements.stAvgLatency.textContent = `${Math.round(res.avg_latency_ms)} ms`;
+  }
+  if (elements.stAvgSpeed) {
+    elements.stAvgSpeed.textContent = `${(res.avg_tok_s || 0).toFixed(1)} t/s`;
+  }
+
+  // Breakdown table
+  if (elements.stTableBody && res.generator_stats) {
+    const genNames = Object.keys(res.generator_stats).sort();
+    let rowsHtml = "";
+    genNames.forEach(name => {
+      const st = res.generator_stats[name];
+      const genAcc = (st.accuracy * 100).toFixed(0);
+      const isPass = st.accuracy >= 1.0;
+      let taskType = "stop";
+      if (name.includes("partial") || name.includes("code") || name.includes("null")) {
+        taskType = "extract";
+      } else if (name.includes("crash") || name.includes("injection") || name.includes("leak") || name.includes("harmless") || name.includes("minor")) {
+        taskType = "scan";
+      }
+
+      rowsHtml += `
+        <tr>
+          <td><code>${escapeHtml(name)}</code></td>
+          <td><span class="slot-task-pill">${taskType.toUpperCase()}</span></td>
+          <td>${st.passed} / ${st.total}</td>
+          <td><span class="badge-acc ${isPass ? "pass" : "fail"}">${genAcc}%</span></td>
+        </tr>
+      `;
+    });
+    elements.stTableBody.innerHTML = rowsHtml;
+  }
+
+  // Failure Inspector list
+  if (elements.stFailCount) {
+    elements.stFailCount.textContent = res.failures ? res.failures.length : 0;
+  }
+  if (elements.stFailureList) {
+    if (!res.failures || res.failures.length === 0) {
+      elements.stFailureList.innerHTML = `<div class="no-failures">${t.noFailures}</div>`;
+    } else {
+      let failHtml = "";
+      res.failures.forEach(f => {
+        failHtml += `
+          <div class="failure-item">
+            <div class="failure-item-header">
+              <span>[${escapeHtml(f.task.toUpperCase())}] ${escapeHtml(f.generator)}</span>
+              <span>ID: ${escapeHtml(f.id)}</span>
+            </div>
+            <div class="failure-detail-row">
+              <span class="key">Expected:</span>
+              <span class="val" style="color:var(--neon-green);">${escapeHtml(f.expected)}</span>
+            </div>
+            <div class="failure-detail-row">
+              <span class="key">Actual:</span>
+              <span class="val" style="color:#F87171;">${escapeHtml(f.actual)}</span>
+            </div>
+            ${f.reason ? `
+              <div class="failure-detail-row">
+                <span class="key">Reason:</span>
+                <span class="val">${escapeHtml(f.reason)}</span>
+              </div>
+            ` : ""}
+            <div class="failure-log-pre">${escapeHtml(f.log)}</div>
+          </div>
+        `;
+      });
+      elements.stFailureList.innerHTML = failHtml;
+    }
+  }
+
+  // Show modal
+  elements.selfTestModal.classList.remove("hidden");
 }
 
 // ==========================================================================
@@ -578,6 +870,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     try {
       const state = await window.go.main.App.GetInitialState();
       if (state) {
+        if (state.version && elements.appVersion) {
+          elements.appVersion.textContent = state.version;
+        }
         if (state.cfg) {
           elements.inputLlamaServer.value = state.cfg.llama_server || "";
           elements.inputModel.value = state.cfg.model || "";
@@ -593,8 +888,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         }
         if (state.hw) {
           currentHwInfo = state.hw;
-          const hwDesc = (state.cfg && state.cfg.lang === "en") ? state.hw.summary_en : state.hw.summary;
-          elements.hwText.textContent = hwDesc || "Hardware ready";
+          updateHeaderHardwareSummary();
         }
         if (state.status) {
           currentStatus = state.status;
@@ -613,6 +907,12 @@ window.addEventListener("DOMContentLoaded", async () => {
         updateStatus(st);
       });
 
+      window.runtime.EventsOn("selftest-progress", (p) => {
+        if (elements.btnRunSelfTest && isSelfTestRunning) {
+          elements.btnRunSelfTest.textContent = `🧪 ${p.current}/${p.total} (${(p.pct * 100).toFixed(0)}%)`;
+        }
+      });
+
       window.runtime.EventsOn("download-progress", (p) => {
         elements.dlBanner.classList.remove("hidden");
         elements.dlLabel.textContent = p.label;
@@ -622,7 +922,6 @@ window.addEventListener("DOMContentLoaded", async () => {
         if (p.complete) {
           setTimeout(() => elements.dlBanner.classList.add("hidden"), 3000);
           showToast(i18n[currentLang].msgDLDone);
-          // Reload state to pick up new paths
           window.go.main.App.GetInitialState().then(st => {
             if (st && st.cfg) {
               elements.inputLlamaServer.value = st.cfg.llama_server || "";
@@ -667,6 +966,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Backend Selector Change
   elements.selectBackend.addEventListener("change", async () => {
     const b = elements.selectBackend.value;
+    updateHeaderHardwareSummary();
     if (window.go?.main?.App?.SetBackend) {
       const resolved = await window.go.main.App.SetBackend(b);
       elements.inputLlamaServer.value = resolved || "";
@@ -702,7 +1002,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Stop Server
   elements.btnStopServer.addEventListener("click", async () => {
-    stopStress();
     if (window.go?.main?.App?.StopServer) {
       await window.go.main.App.StopServer();
     }
@@ -740,72 +1039,50 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Continuous Stress Test Loop (Slot 0 & Slot 1 Dual Worker with Async/Await)
-  let stressRunning = false;
-  let activeWorkers = 0;
+  // Self-Test Actions
+  if (elements.btnRunSelfTest) {
+    elements.btnRunSelfTest.addEventListener("click", () => {
+      runSelfTest();
+    });
+  }
 
-  async function runStressWorker(workerId) {
-    if (!stressRunning || !currentStatus?.running) return;
-    activeWorkers++;
-    try {
-      while (stressRunning && currentStatus && currentStatus.running) {
-        const tasks = ["stop", "extract", "scan"];
-        const task = tasks[Math.floor(Math.random() * tasks.length)];
-        if (window.go?.main?.App?.TriggerQuickTest) {
-          try {
-            await window.go.main.App.TriggerQuickTest(task);
-          } catch (e) {
-            if (!stressRunning || !currentStatus?.running) break;
-          }
-        }
-        if (!stressRunning || !currentStatus?.running) break;
-        // Pacing delay between sequential requests
-        await new Promise(r => setTimeout(r, 40));
+  if (elements.btnCloseSelfTest) {
+    elements.btnCloseSelfTest.addEventListener("click", () => {
+      elements.selfTestModal.classList.add("hidden");
+    });
+  }
+  if (elements.btnCloseSelfTestBtn) {
+    elements.btnCloseSelfTestBtn.addEventListener("click", () => {
+      elements.selfTestModal.classList.add("hidden");
+    });
+  }
+  if (elements.btnRerunSelfTest) {
+    elements.btnRerunSelfTest.addEventListener("click", () => {
+      elements.selfTestModal.classList.add("hidden");
+      runSelfTest();
+    });
+  }
+  if (elements.selfTestModal) {
+    elements.selfTestModal.addEventListener("click", (e) => {
+      if (e.target === elements.selfTestModal) {
+        elements.selfTestModal.classList.add("hidden");
       }
-    } finally {
-      activeWorkers = Math.max(0, activeWorkers - 1);
-      if (activeWorkers === 0) {
-        finalizeStopStress();
-      }
+    });
+  }
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && elements.selfTestModal && !elements.selfTestModal.classList.contains("hidden")) {
+      elements.selfTestModal.classList.add("hidden");
     }
-  }
+  });
 
-  function startStress() {
-    if (!currentStatus || !currentStatus.running) return;
-    if (stressRunning) return;
-    stressRunning = true;
-    if (elements.btnTestStress) {
-      elements.btnTestStress.classList.add("active");
-      elements.btnTestStress.textContent = currentLang === "en" ? "⏹ Stop Stress" : "⏹ 連打停止";
-    }
-    // Launch dual staggered workers for Slot 0 & Slot 1
-    runStressWorker(0);
-    setTimeout(() => {
-      if (stressRunning && currentStatus?.running) {
-        runStressWorker(1);
-      }
-    }, 45);
-  }
-
-  function stopStress() {
-    stressRunning = false;
-    finalizeStopStress();
-  }
-
-  function finalizeStopStress() {
-    if (elements.btnTestStress) {
-      elements.btnTestStress.classList.remove("active");
-      const t = i18n[currentLang] || i18n.ja;
-      elements.btnTestStress.textContent = t.btnTestStress || "⚡ 負荷連打";
-    }
-  }
-
-  if (elements.btnTestStress) {
-    elements.btnTestStress.addEventListener("click", () => {
-      if (!stressRunning) {
-        startStress();
+  // Ko-fi Support Link
+  if (elements.btnKofi) {
+    elements.btnKofi.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (window.runtime?.BrowserOpenURL) {
+        window.runtime.BrowserOpenURL("https://ko-fi.com/fallout_tokyo");
       } else {
-        stopStress();
+        window.open("https://ko-fi.com/fallout_tokyo", "_blank");
       }
     });
   }

@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -15,17 +19,33 @@ var assets embed.FS
 func main() {
 	app := NewApp()
 
+	// Handle OS interrupt signals for graceful child process termination
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		_ = app.StopServer()
+		os.Exit(0)
+	}()
+
 	err := wails.Run(&options.App{
-		Title:     "local-jev (Qwen3.5-0.8B Fast AI Gateway)",
-		Width:     1080,
-		Height:    840,
-		MinWidth:  960,
-		MinHeight: 700,
+		Title:             "ReflexGate (Qwen2.5-Coder-1.5B Fast AI Gateway)",
+		Width:             1080,
+		Height:            840,
+		MinWidth:          960,
+		MinHeight:         700,
+		HideWindowOnClose: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 10, G: 12, B: 16, A: 255},
-		OnStartup:        app.startup,
+		OnStartup: func(ctx context.Context) {
+			app.startup(ctx)
+			initTray(app)
+		},
+		OnShutdown: func(ctx context.Context) {
+			app.shutdown(ctx)
+		},
 		Bind: []interface{}{
 			app,
 		},

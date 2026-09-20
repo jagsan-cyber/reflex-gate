@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>local-jev</title>
+  <title>ReflexGate</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="theme-dark">
@@ -17,8 +17,8 @@
           </svg>
         </div>
         <div class="brand-text">
-          <div class="brand-title">LOCAL-JEV</div>
-          <div class="brand-subtitle" id="hdrSubtitle">Qwen3.5-0.8B Fast AI Gateway</div>
+          <div class="brand-title">ReflexGate <span class="version-badge" id="appVersion">v0.1.0</span></div>
+          <div class="brand-subtitle" id="hdrSubtitle">Qwen2.5-Coder-1.5B Fast AI Gateway</div>
         </div>
       </div>
 
@@ -30,6 +30,10 @@
       </div>
 
       <div class="header-actions">
+        <a href="https://ko-fi.com/fallout_tokyo" target="_blank" class="btn-kofi" id="btnKofi" title="Support development on Ko-fi">
+          <span class="kofi-icon">☕</span>
+          <span class="kofi-text">Support</span>
+        </a>
         <div class="status-pill" id="statusPill">
           <span class="status-dot"></span>
           <span class="status-label" id="statusLabel">STOPPED</span>
@@ -71,9 +75,9 @@
           </div>
 
           <div class="form-group">
-            <label id="lblModel">Qwen3.5-0.8B GGUF モデル</label>
+            <label id="lblModel">Qwen2.5-Coder-1.5B GGUF モデル</label>
             <div class="input-with-btn">
-              <input type="text" id="inputModel" spellcheck="false" placeholder="Qwen3.5-0.8B GGUF の絶対パス">
+              <input type="text" id="inputModel" spellcheck="false" placeholder="Qwen2.5-Coder-1.5B GGUF の絶対パス">
               <button class="btn-subtle" id="btnBrowseModel" id-text="btnBrowse">参照</button>
             </div>
           </div>
@@ -98,7 +102,7 @@
               <label id="lblBackend">推論バックエンド</label>
               <select id="selectBackend">
                 <option value="auto" id="optBackendAuto">自動検出 (推奨)</option>
-                <option value="vulkan" id="optBackendVulkan">Vulkan (AMD 860M / Intel / 汎用)</option>
+                <option value="vulkan" id="optBackendVulkan">Vulkan (汎用 GPU / AMD / Intel)</option>
                 <option value="cuda" id="optBackendCUDA">CUDA (NVIDIA RTX / GeForce)</option>
                 <option value="hip" id="optBackendHIP">ROCm / HIP (AMD Radeon)</option>
                 <option value="sycl" id="optBackendSYCL">Intel SYCL (Arc / Core Ultra)</option>
@@ -118,7 +122,7 @@
 
           <div class="grid-2col">
             <div class="form-group">
-              <label id="lblJevPort">JEV API ポート</label>
+              <label id="lblJevPort">ReflexGate API ポート</label>
               <input type="number" id="inputJevPort" value="8090">
             </div>
             <div class="form-group">
@@ -131,7 +135,7 @@
           <div class="btn-group-actions">
             <button class="btn-neon-green" id="btnStartServer">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-              <span id="txtStartServer">JEV 起動</span>
+              <span id="txtStartServer">ReflexGate 起動</span>
             </button>
             <button class="btn-neon-red" id="btnStopServer" disabled>
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
@@ -151,17 +155,23 @@
           </div>
         </div>
 
-        <!-- Quick Test Suite -->
+        <!-- Quick Test & Self-Test Suite -->
         <div class="panel-card">
           <div class="panel-title">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-            <span id="txtQuickTest">クイックテスト実行</span>
+            <span id="txtQuickTest">精度検証 & クイックテスト</span>
           </div>
           <div class="quick-test-bar">
             <button class="btn-test" id="btnTestStop" disabled>Stop 判定</button>
-            <button class="btn-test" id="btnTestExtract" disabled>Diff抽出</button>
+            <button class="btn-test" id="btnTestExtract" disabled>ステータス抽出</button>
             <button class="btn-test" id="btnTestScan" disabled>エラー検知</button>
-            <button class="btn-test btn-stress" id="btnTestStress" disabled>⚡ 負荷連打</button>
+            <div class="selftest-group">
+              <select id="selectSelfTestMode" class="selftest-select" title="テスト規模を選択">
+                <option value="quick">Quick (15件)</option>
+                <option value="thorough">詳細 (100件)</option>
+              </select>
+              <button class="btn-test btn-selftest" id="btnRunSelfTest" disabled>🧪 セルフテスト</button>
+            </div>
           </div>
         </div>
       </section>
@@ -181,7 +191,7 @@
                 <span class="engine-icon" id="engineIcon">⚡</span>
                 <span class="engine-text" id="engineText">GPU: Vulkan</span>
               </div>
-              <!-- Triple Processing Slot LEDs -->
+              <!-- Slot Status LEDs -->
               <div class="slot-container">
                 <div class="slot-badge" id="slot0Badge">
                   <span class="slot-led" id="slot0Led"></span>
@@ -199,7 +209,7 @@
             </div>
           </div>
 
-          <!-- Real-time Latency Level Meter (Audio-VU Style Bar) -->
+          <!-- Real-time Latency Level Meter -->
           <div class="meter-container">
             <div class="meter-header">
               <span class="meter-label" id="lblLatencyMeter">応答レイテンシ・レベルメーター</span>
@@ -246,6 +256,57 @@
               <div class="kpi-value purple" id="kpiValCalls">0 <span class="unit">reqs</span></div>
             </div>
           </div>
+
+          <!-- Real-time Context Usage Gauge -->
+          <div class="ctx-meter-card">
+            <div class="ctx-meter-header">
+              <div class="ctx-meter-title">
+                <span id="lblCtxUsage">コンテキスト消費量 (直近リクエスト):</span>
+                <span class="ctx-meter-val" id="ctxUsageVal">0 / 8,192 (0%)</span>
+              </div>
+              <div class="ctx-warn-pill hidden" id="ctxWarnPill">⚠️ <span id="ctxWarnText">Capped</span></div>
+            </div>
+            <div class="ctx-track">
+              <div class="ctx-bar" id="ctxGaugeBar" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- Slot Breakdown Activity Cards -->
+          <div class="slot-monitor-grid">
+            <div class="slot-card" id="slotCard0">
+              <div class="slot-card-header">
+                <span class="slot-card-name">SLOT 0</span>
+                <span class="slot-task-pill" id="slot0Task">STOP / Sys1</span>
+                <span class="slot-state-badge idle" id="slot0State">IDLE</span>
+              </div>
+              <div class="slot-card-body">
+                <div class="slot-metric"><span class="lbl">Latency:</span> <span class="val cyan" id="slot0Lat">-</span></div>
+                <div class="slot-metric"><span class="lbl">Tok/s:</span> <span class="val green" id="slot0Toks">-</span></div>
+              </div>
+            </div>
+            <div class="slot-card" id="slotCard1">
+              <div class="slot-card-header">
+                <span class="slot-card-name">SLOT 1</span>
+                <span class="slot-task-pill" id="slot1Task">EXTRACT</span>
+                <span class="slot-state-badge idle" id="slot1State">IDLE</span>
+              </div>
+              <div class="slot-card-body">
+                <div class="slot-metric"><span class="lbl">Latency:</span> <span class="val cyan" id="slot1Lat">-</span></div>
+                <div class="slot-metric"><span class="lbl">Tok/s:</span> <span class="val green" id="slot1Toks">-</span></div>
+              </div>
+            </div>
+            <div class="slot-card" id="slotCard2">
+              <div class="slot-card-header">
+                <span class="slot-card-name">SLOT 2</span>
+                <span class="slot-task-pill" id="slot2Task">SCAN</span>
+                <span class="slot-state-badge idle" id="slot2State">IDLE</span>
+              </div>
+              <div class="slot-card-body">
+                <div class="slot-metric"><span class="lbl">Latency:</span> <span class="val cyan" id="slot2Lat">-</span></div>
+                <div class="slot-metric"><span class="lbl">Tok/s:</span> <span class="val green" id="slot2Toks">-</span></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Activity Log Card -->
@@ -267,6 +328,69 @@
         </div>
       </section>
     </main>
+
+    <!-- Self-Test Results & Failure Inspector Modal -->
+    <div class="modal-overlay hidden" id="selfTestModal">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title">
+            🧪 <span id="modalTitleText">セルフテスト精度検証</span>
+            <span class="modal-badge pass" id="modalAccuracyBadge">100% PASS</span>
+          </div>
+          <button class="modal-close" id="btnCloseSelfTest">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Overview Cards -->
+          <div class="selftest-summary-grid">
+            <div class="summary-box">
+              <div class="summary-lbl">全体正解率</div>
+              <div class="summary-val green" id="stOverallAcc">100.0%</div>
+            </div>
+            <div class="summary-box">
+              <div class="summary-lbl">合格件数</div>
+              <div class="summary-val" id="stCaseCount">0 / 0</div>
+            </div>
+            <div class="summary-box">
+              <div class="summary-lbl">平均レイテンシ</div>
+              <div class="summary-val cyan" id="stAvgLatency">0 ms</div>
+            </div>
+            <div class="summary-box">
+              <div class="summary-lbl">平均推論速度</div>
+              <div class="summary-val green" id="stAvgSpeed">0.0 t/s</div>
+            </div>
+          </div>
+
+          <!-- Generator Breakdown Table -->
+          <div class="selftest-table-wrapper">
+            <div class="section-subtitle">ジェネレーター別精度内訳</div>
+            <table class="selftest-table">
+              <thead>
+                <tr>
+                  <th>Generator / Trap Pattern</th>
+                  <th>Task</th>
+                  <th>Passed</th>
+                  <th>Accuracy</th>
+                </tr>
+              </thead>
+              <tbody id="stTableBody">
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Failure Inspector Section -->
+          <div class="selftest-failure-section" id="stFailureSection">
+            <div class="section-subtitle failure-hdr">誤答詳細インスペクター (<span id="stFailCount">0</span> 件)</div>
+            <div class="failure-list" id="stFailureList">
+              <div class="no-failures">誤答はありません。すべてのジェネレーターが正常にパスしました。</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-neon-green" id="btnRerunSelfTest">再テスト実行</button>
+          <button class="btn-subtle" id="btnCloseSelfTestBtn">閉じる</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Global Toast / Alert -->
     <div class="toast hidden" id="appToast">
