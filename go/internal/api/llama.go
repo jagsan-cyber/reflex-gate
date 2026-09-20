@@ -113,7 +113,7 @@ func (l *Llama) ChatDecideSlot(question string, options []string, context string
 		},
 		"grammar":              schema.OptionsGrammar(options),
 		"id_slot":              slotID,
-		"cache_prompt":         true,
+		"cache_prompt":         false,
 		"chat_template_kwargs": map[string]any{"enable_thinking": false},
 	}
 	raw, err := l.postJSON("/v1/chat/completions", req)

@@ -686,9 +686,9 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				lower := strings.ToLower(instr)
-				if strings.Contains(lower, "crash") {
+				if strings.Contains(lower, "crash") || strings.Contains(instr, "クラッシュ") {
 					sb.WriteString("- yes: crash present\n- no: no crash\n")
-				} else if strings.Contains(lower, "issue") {
+				} else if strings.Contains(lower, "issue") || strings.Contains(instr, "問題") || strings.Contains(instr, "障害") {
 					sb.WriteString("- yes: issue present\n- no: no issue\n")
 				} else if strings.Contains(lower, "stop") || strings.Contains(lower, "complete") || strings.Contains(lower, "loop") {
 					sb.WriteString("- yes: task fully completed and loop should stop\n- no: task incomplete or loop should continue\n")
@@ -696,6 +696,9 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 					sb.WriteString("- yes: prompt injection or attack present\n- no: clean text\n")
 				} else if strings.Contains(lower, "secret") || strings.Contains(lower, "credential") || strings.Contains(lower, "leak") {
 					sb.WriteString("- yes: secret or credential leaked\n- no: safe\n")
+				} else if strings.Contains(instr, "人間") || strings.Contains(instr, "担当者") || strings.Contains(lower, "human") ||
+					strings.Contains(instr, "返金") || strings.Contains(lower, "refund") || strings.Contains(lower, "escalat") || strings.Contains(instr, "苦情") {
+					sb.WriteString("- yes: yes, customer refund request or complaint requires human intervention\n- no: no, automated resolution or no human intervention needed\n")
 				}
 			}
 			vq.options = opts
