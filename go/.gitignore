@@ -1,5 +1,0 @@
-*.exe
-bin/
-build/bin/
-models/
-config.json

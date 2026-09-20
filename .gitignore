@@ -10,7 +10,7 @@ models/
 bin/
 go/models/
 go/bin/
-build/
+build/bin/
 go/build/bin/
 
 # User configs and logs
