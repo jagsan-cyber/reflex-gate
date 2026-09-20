@@ -811,11 +811,16 @@ func TestSystemOneNoulViaChoice(t *testing.T) {
 		if math.Abs(*noulAns.Noul-choiceYesProb) > 0.01 {
 			t.Errorf("exact parity mismatch: noul=%f != choice[yes]=%f", *noulAns.Noul, choiceYesProb)
 		}
+	})
 
-		// 5. Explicitly assert that distorted value 0.55 FAILS against choice 0.69 (0.01 precision)
-		distortedVal := 0.55
-		if math.Abs(distortedVal-choiceYesProb) <= 0.01 {
-			t.Errorf("expected 0.55 to fail parity check against choice %f, but it passed", choiceYesProb)
+	t.Run("ParityStrictAssertion_0.55_Fails", func(t *testing.T) {
+		// Explicitly assert that distorted/compressed value of 0.55 strictly FAILS
+		// against choice positive probability of 0.69 with 0.01 precision.
+		choiceYesProb := 0.69
+		distortedNoul := 0.55
+		diff := math.Abs(distortedNoul - choiceYesProb)
+		if diff <= 0.01 {
+			t.Fatalf("expected parity check to fail for noul=0.55 vs choice=0.69, but got diff=%f <= 0.01", diff)
 		}
 	})
 
