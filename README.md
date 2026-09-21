@@ -32,7 +32,7 @@ If ReflexGate helped speed up your local agent workflows, saved your API token e
 
 When autonomous coding agents run in iterative loops, evaluating stop conditions and extracting error states via large cloud models introduces high latency (2-5s+) and unnecessary token costs.
 
-**ReflexGate** wraps a compact local model (`Qwen2.5-Coder-1.5B-Instruct` on `llama.cpp`) into a dedicated, low-latency (sub-second) local gateway server (`http://127.0.0.1:8090`). It provides a modern Windows Desktop GUI launcher, real-time audio-VU performance telemetry, and 3 high-precision endpoints with 100.0% benchmark accuracy.
+**ReflexGate** wraps a compact local model (`Qwen2.5-Coder-1.5B-Instruct` on `llama.cpp`) into a dedicated, low-latency (sub-second) local gateway server (`http://127.0.0.1:8090`). It provides a modern Windows Desktop GUI launcher, real-time audio-VU performance telemetry, three agent-loop endpoints (`/jev/stop`, `/jev/extract`, `/jev/scan`) with 100.0% self-test accuracy, plus a JEV/System One-compatible `POST /v1/systemone` for typed `noul` / `choice` decisions (local triage; not a TypeSafe product).
 
 ---
 
@@ -53,10 +53,13 @@ Download the ready-to-run Windows executable from **[GitHub Releases](https://gi
 ## 🌟 Key Features
 
 - **Modern Cyberpunk Dark Desktop GUI**: Built with Wails v2 + WebView2 + Go.
-- **3 Core Agent Gate Endpoints**:
+- **3 Core Agent Gate Endpoints** (`{"log": "..."}` payloads):
   - `POST /jev/stop` -> Intelligent loop-exit gating with 1-line Chain-of-Thought (CoT) + GBNF grammar.
   - `POST /jev/extract` -> Tool-argument & status/error-code JSON extraction with strict JSON Schema.
   - `POST /jev/scan` -> Hybrid safety shield (<1ms regex secret detection + semantic crash & prompt injection scanner).
+- **JEV / System One Compatible Decisions**:
+  - `POST /v1/systemone` -> Typed `noul` and `choice` over a `state` (official wire: `model` + `state` + `questions` with `instructions`). Useful for local-first difficulty / privacy triage before a cloud worker.
+  - API-compatible with JEV/System One shapes; **not** a JEV distillation and **not** affiliated with TypeSafe. Hard cases can still lose to the commercial API.
 - **Built-in Self-Test Suite & Failure Inspector**:
   - Validates 13 production trap patterns (fake success, retry recovery, secret leaks, subtle crashes, etc.).
   - Select between Quick (15 cases) and Thorough (100 cases) modes with a graphical failure inspector modal.
@@ -78,7 +81,9 @@ Download the ready-to-run Windows executable from **[GitHub Releases](https://gi
 
 ## 📡 API Reference
 
-All requests accept a single JSON payload: `{"log": "<string>"}`.
+The three **agent-loop** endpoints (`/jev/stop`, `/jev/extract`, `/jev/scan`) accept a single JSON payload: `{"log": "<string>"}`.
+
+Typed decisions use a separate path: `POST /v1/systemone` (see below). Do not send only `{"log":...}` there.
 
 ### 1. Loop Exit Gating (`POST /jev/stop`)
 ```bash
@@ -124,6 +129,31 @@ Response:
   "reason": "Plaintext API key leaked in stdout log."
 }
 ```
+
+---
+
+### 4. Typed Decisions (`POST /v1/systemone`)
+
+Official-style wire (TypeSafe JEV / System One compatible shapes). Returns `answers.<id>.noul` or `answers.<id>.choice` (+ confidence).
+
+```bash
+curl -s http://127.0.0.1:8090/v1/systemone \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jev-latest",
+    "state": "Outbound draft mentioning an API key sk-proj-EXAMPLE",
+    "questions": {
+      "unsafe": {
+        "type": "noul",
+        "instructions": "Does this outbound package contain secrets, credentials, or sensitive personal data that must not leave the machine?"
+      }
+    }
+  }'
+```
+
+- **Official path**: `model` + `state` + `questions` map; each question needs `type` (`noul` | `choice`) and `instructions` (choice also needs `criteria`).
+- **Legacy path**: top-level `question` with `context` (v0.1.2: empty `context` may fall back to `state`). Prefer the official path for new clients.
+- OpenClaw-style local-first triage can call this before any cloud worker; pair with `/jev/scan` when you want regex secret hits as well.
 
 ---
 
@@ -217,6 +247,9 @@ overhead compared to a single cloud LLM call.
 ---
 
 ## 📝 Changelog
+
+### Docs (post-v0.1.2)
+- **README**: Surface `POST /v1/systemone` in Overview / Features / API Reference so scrapers no longer infer "agent trio only".
 
 ### v0.1.2
 - **Legacy SystemOne `state` alias**: On the legacy `/v1/systemone` path, empty `context` now falls back to `state` (string or JSON). Explicit `context` still wins when both are set.
