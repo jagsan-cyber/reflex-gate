@@ -113,6 +113,15 @@ func TrimContext(text string) string {
 }
 
 func Softmax(logps map[string]float64) map[string]float64 {
+	return SoftmaxWithTemperature(logps, 1.0)
+}
+
+// SoftmaxWithTemperature computes temperature-scaled softmax probabilities:
+// P(i) = exp((z_i - max(z)) / T) / sum(exp((z_j - max(z)) / T))
+func SoftmaxWithTemperature(logps map[string]float64, temp float64) map[string]float64 {
+	if temp <= 0 {
+		temp = 0.20
+	}
 	maxv := MissingLogprob
 	for _, v := range logps {
 		if v > maxv {
@@ -122,7 +131,11 @@ func Softmax(logps map[string]float64) map[string]float64 {
 	exps := make(map[string]float64, len(logps))
 	var z float64
 	for k, v := range logps {
-		e := math.Exp(v - maxv)
+		scaled := (v - maxv) / temp
+		if scaled < -40.0 {
+			scaled = -40.0
+		}
+		e := math.Exp(scaled)
 		exps[k] = e
 		z += e
 	}
@@ -133,6 +146,116 @@ func Softmax(logps map[string]float64) map[string]float64 {
 	for k, e := range exps {
 		out[k] = e / z
 	}
+	return out
+}
+
+// GetChoiceTemperature returns temperature T for choice logit scaling (default 1.0, env JEV_CHOICE_TEMP).
+func GetChoiceTemperature() float64 {
+	envT := os.Getenv("JEV_CHOICE_TEMP")
+	if envT != "" {
+		if t, err := strconv.ParseFloat(strings.TrimSpace(envT), 64); err == nil && t > 0 {
+			return t
+		}
+	}
+	return 1.0
+}
+
+// StepLogprob stores the generated token and candidate alternatives at a single decode step.
+type StepLogprob struct {
+	Token      string
+	Logprob    float64
+	Candidates map[string]float64
+}
+
+// AggregateOptionLogprobs computes length-normalized average logprob for each option across all decode steps.
+func AggregateOptionLogprobs(options []string, winnerOpt string, steps []StepLogprob) map[string]float64 {
+	out := make(map[string]float64, len(options))
+	if len(steps) == 0 {
+		for _, opt := range options {
+			if strings.EqualFold(opt, winnerOpt) {
+				out[opt] = 0.0
+			} else {
+				out[opt] = MissingLogprob
+			}
+		}
+		return out
+	}
+
+	// 1. Calculate the winner's average logprob across all generated tokens
+	var winnerSum float64
+	for _, s := range steps {
+		winnerSum += s.Logprob
+	}
+	winnerAvg := winnerSum / float64(len(steps))
+
+	// 2. For each option, aggregate token logprobs sequentially
+	for _, opt := range options {
+		if strings.EqualFold(opt, winnerOpt) {
+			out[opt] = winnerAvg
+			continue
+		}
+
+		rem := strings.TrimSpace(opt)
+		var collected []float64
+
+		for stepIdx := 0; stepIdx < len(steps) && len(rem) > 0; stepIdx++ {
+			cands := steps[stepIdx].Candidates
+			bestMatchLen := 0
+			bestLP := MissingLogprob
+			found := false
+
+			for candTok, candLP := range cands {
+				candTrim := strings.TrimSpace(candTok)
+				if candTrim == "" {
+					continue
+				}
+				if strings.HasPrefix(strings.ToLower(rem), strings.ToLower(candTrim)) {
+					if len(candTrim) > bestMatchLen || (len(candTrim) == bestMatchLen && candLP > bestLP) {
+						bestMatchLen = len(candTrim)
+						bestLP = candLP
+						found = true
+					}
+				} else if strings.HasPrefix(strings.ToLower(candTrim), strings.ToLower(rem)) {
+					if len(rem) > bestMatchLen || (len(rem) == bestMatchLen && candLP > bestLP) {
+						bestMatchLen = len(rem)
+						bestLP = candLP
+						found = true
+					}
+				}
+			}
+
+			if found {
+				collected = append(collected, bestLP)
+				if bestMatchLen >= len(rem) {
+					rem = ""
+					break
+				}
+				rem = strings.TrimSpace(rem[bestMatchLen:])
+			} else {
+				collected = append(collected, MissingLogprob)
+				break
+			}
+		}
+
+		if len(rem) > 0 {
+			collected = append(collected, MissingLogprob)
+		}
+
+		if len(collected) == 0 {
+			out[opt] = MissingLogprob
+		} else {
+			var sum float64
+			for _, lp := range collected {
+				sum += lp
+			}
+			out[opt] = sum / float64(len(collected))
+		}
+	}
+
+	if winnerAvg > MissingLogprob+1.0 && winnerOpt != "" {
+		out[winnerOpt] = winnerAvg
+	}
+
 	return out
 }
 

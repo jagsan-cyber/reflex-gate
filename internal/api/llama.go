@@ -98,11 +98,14 @@ func (l *Llama) ChatDecide(question string, options []string, context string) (r
 func (l *Llama) ChatDecideSlot(question string, options []string, context string, slotID int) (result string, dist map[string]float64, logps map[string]float64, content string, promptN, predN int, err error) {
 	user := fmt.Sprintf("Instructions:\n%s\nAllowed options:\n%s\n\nState:\n%s\n",
 		question, strings.Join(options, ", "), schema.TrimContext(context))
-	nPredict := 8
+	nPredict := 16
 	for _, o := range options {
-		if len(o) > nPredict {
-			nPredict = len(o)
+		if len(o)+8 > nPredict {
+			nPredict = len(o) + 8
 		}
+	}
+	if nPredict > 64 {
+		nPredict = 64
 	}
 	req := map[string]any{
 		"model":         "local",
@@ -124,49 +127,70 @@ func (l *Llama) ChatDecideSlot(question string, options []string, context string
 		return "", nil, nil, "", 0, 0, err
 	}
 	content = strings.TrimSpace(jsonPathString(raw, "choices", 0, "message", "content"))
-	var top []struct {
-		Token   string
-		Logprob float64
-	}
-	if ch, ok := jsonIndex(raw["choices"], 0); ok {
-		if lp, ok := ch["logprobs"].(map[string]any); ok {
-			if arr, ok := lp["content"].([]any); ok && len(arr) > 0 {
-				if first, ok := arr[0].(map[string]any); ok {
-					tok, _ := first["token"].(string)
-					lg, _ := first["logprob"].(float64)
-					top = append(top, struct {
-						Token   string
-						Logprob float64
-					}{tok, lg})
-					if tl, ok := first["top_logprobs"].([]any); ok {
-						for _, x := range tl {
-							m, _ := x.(map[string]any)
-							if m == nil {
-								continue
-							}
-							t, _ := m["token"].(string)
-							p, _ := m["logprob"].(float64)
-							top = append(top, struct {
-								Token   string
-								Logprob float64
-							}{t, p})
-						}
-					}
-				}
-			}
-		}
-	}
-	logps = schema.MatchOptionLogprobs(options, top)
-	dist = schema.Softmax(logps)
+
 	result = content
 	matched := false
 	for _, o := range options {
-		if content == o || strings.HasPrefix(content, o) {
+		if content == o || strings.EqualFold(content, o) {
 			result = o
 			matched = true
 			break
 		}
 	}
+	if !matched {
+		for _, o := range options {
+			if strings.HasPrefix(strings.ToLower(content), strings.ToLower(o)) || strings.HasPrefix(strings.ToLower(o), strings.ToLower(content)) {
+				result = o
+				matched = true
+				break
+			}
+		}
+	}
+
+	var steps []schema.StepLogprob
+	if ch, ok := jsonIndex(raw["choices"], 0); ok {
+		if lp, ok := ch["logprobs"].(map[string]any); ok {
+			if arr, ok := lp["content"].([]any); ok {
+				for _, item := range arr {
+					m, ok := item.(map[string]any)
+					if !ok {
+						continue
+					}
+					tok, _ := m["token"].(string)
+					lg, _ := m["logprob"].(float64)
+					cands := make(map[string]float64)
+					cands[tok] = lg
+					cands[strings.TrimSpace(tok)] = lg
+					if tl, ok := m["top_logprobs"].([]any); ok {
+						for _, x := range tl {
+							tm, ok := x.(map[string]any)
+							if !ok {
+								continue
+							}
+							t, _ := tm["token"].(string)
+							p, _ := tm["logprob"].(float64)
+							if prev, exists := cands[t]; !exists || p > prev {
+								cands[t] = p
+							}
+							trimT := strings.TrimSpace(t)
+							if prev, exists := cands[trimT]; !exists || p > prev {
+								cands[trimT] = p
+							}
+						}
+					}
+					steps = append(steps, schema.StepLogprob{
+						Token:      tok,
+						Logprob:    lg,
+						Candidates: cands,
+					})
+				}
+			}
+		}
+	}
+
+	logps = schema.AggregateOptionLogprobs(options, result, steps)
+	dist = schema.SoftmaxWithTemperature(logps, schema.GetChoiceTemperature())
+
 	if !matched {
 		best, bestP := "", -1.0
 		for k, v := range dist {
@@ -174,7 +198,9 @@ func (l *Llama) ChatDecideSlot(question string, options []string, context string
 				best, bestP = k, v
 			}
 		}
-		result = best
+		if best != "" {
+			result = best
+		}
 	}
 	if u, ok := raw["usage"].(map[string]any); ok {
 		promptN = asInt(u["prompt_tokens"])
