@@ -216,6 +216,15 @@ overhead compared to a single cloud LLM call.
 
 ---
 
+## 📝 Changelog
+
+### v0.1.1
+- **Choice logprob aggregation**: Score full option strings via aggregated logprobs (not first token only), resolving confidence collapse on multi-token choices.
+- **Confidence calibration**: Temperature-scaled calibration (`JEV_CHOICE_TEMP`, default 1.0) while keeping sampling temperature=0.0 and thinking disabled.
+- **Compatibility**: Maintained existing local Jev / System One-compatible API shapes and endpoints.
+
+---
+
 ## 📄 License & Disclaimers
 
 ### License
