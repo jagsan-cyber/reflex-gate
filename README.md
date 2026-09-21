@@ -218,6 +218,11 @@ overhead compared to a single cloud LLM call.
 
 ## 📝 Changelog
 
+### v0.1.2
+- **Legacy SystemOne `state` alias**: On the legacy `/v1/systemone` path, empty `context` now falls back to `state` (string or JSON). Explicit `context` still wins when both are set.
+- **Footgun fix**: Callers that mirrored the official `state` field on the legacy wire no longer get silent empty-context judgments (near-always `no`).
+- **Compatibility**: Official TypeSafe wire (`questions` + `instructions` + `state`) unchanged.
+
 ### v0.1.1
 - **Choice logprob aggregation**: Score full option strings via aggregated logprobs (not first token only), resolving confidence collapse on multi-token choices.
 - **Confidence calibration**: Temperature-scaled calibration (`JEV_CHOICE_TEMP`, default 1.0) while keeping sampling temperature=0.0 and thinking disabled.
