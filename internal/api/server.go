@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -517,6 +518,32 @@ type systemOneRequest struct {
 	Questions map[string]systemOneQuestion `json:"questions"`
 }
 
+
+// resolveLegacyContext prefers explicit context; if empty, uses state as an alias
+// (string or JSON-encoded value). This prevents silent empty-context judgments
+// when callers mirror the official SystemOne "state" field on the legacy path.
+func resolveLegacyContext(context string, state json.RawMessage) string {
+	if strings.TrimSpace(context) != "" {
+		return context
+	}
+	raw := bytes.TrimSpace(state)
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return asString
+	}
+	var asAny any
+	if err := json.Unmarshal(raw, &asAny); err == nil {
+		b, err := json.Marshal(asAny)
+		if err == nil {
+			return string(b)
+		}
+	}
+	return string(raw)
+}
+
 func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		writeJSON(w, 401, map[string]string{"detail": "Invalid API key"})
@@ -531,10 +558,11 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Check if legacy single-question request: {"type": "...", "question": "...", ...}
 	var legacyCheck struct {
-		Type     string   `json:"type"`
-		Question string   `json:"question"`
-		Options  []string `json:"options"`
-		Context  string   `json:"context"`
+		Type     string          `json:"type"`
+		Question string          `json:"question"`
+		Options  []string        `json:"options"`
+		Context  string          `json:"context"`
+		State    json.RawMessage `json:"state"`
 	}
 	if err := json.Unmarshal(bodyBytes, &legacyCheck); err == nil && legacyCheck.Question != "" {
 		opts := legacyCheck.Options
@@ -547,7 +575,8 @@ func (s *Server) systemone(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		t0 := time.Now()
-		result, dist, _, _, _, _, err := s.Llama.ChatDecide(legacyCheck.Question, opts, legacyCheck.Context)
+		ctx := resolveLegacyContext(legacyCheck.Context, legacyCheck.State)
+		result, dist, _, _, _, _, err := s.Llama.ChatDecide(legacyCheck.Question, opts, ctx)
 		if err != nil {
 			writeJSON(w, 502, map[string]string{"detail": err.Error()})
 			return

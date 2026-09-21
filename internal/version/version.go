@@ -5,6 +5,6 @@ package version
 
 const (
 	AppName    = "ReflexGate"
-	Version    = "v0.1.1"
+	Version    = "v0.1.2"
 	AppComment = "ReflexGate Fast AI Gateway (Qwen2.5-Coder-1.5B)"
 )

@@ -1,20 +1,20 @@
 {
-  "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "reflexgate",
-  "outputfilename": "reflexgate",
-  "frontend:dir": "frontend",
-  "frontend:install": "",
-  "frontend:build": "",
-  "wailsjsdir": "frontend/src",
-  "version": "2",
-  "author": {
-    "name": "ReflexGate Team"
-  },
-  "info": {
-    "companyName": "ReflexGate",
-    "productName": "ReflexGate",
-    "productVersion": "0.1.1",
-    "copyright": "Copyright 2026",
-    "comments": "ReflexGate Fast AI Gateway (Qwen2.5-Coder-1.5B)"
-  }
+    "$schema":  "https://wails.io/schemas/config.v2.json",
+    "name":  "reflexgate",
+    "outputfilename":  "reflexgate",
+    "frontend:dir":  "frontend",
+    "frontend:install":  "",
+    "frontend:build":  "",
+    "wailsjsdir":  "frontend/src",
+    "version":  "2",
+    "author":  {
+                   "name":  "ReflexGate Team"
+               },
+    "info":  {
+                 "companyName":  "ReflexGate",
+                 "productName":  "ReflexGate",
+                 "productVersion":  "0.1.2",
+                 "copyright":  "Copyright 2026",
+                 "comments":  "ReflexGate Fast AI Gateway (Qwen2.5-Coder-1.5B)"
+             }
 }
